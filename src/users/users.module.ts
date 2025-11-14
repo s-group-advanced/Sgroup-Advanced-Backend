@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MailModule } from '../mail/mail.module';
 import { UsersController } from './controllers/users.controller';
 import { UsersService } from './services/users.service';
 import { User } from './entities/user.entity';
@@ -36,6 +37,7 @@ import { AuthModule } from 'src/auth/auth.module';
       Workspace,
     ]),
     AuthModule,
+    MailModule,
   ],
   controllers: [UsersController],
   providers: [UsersService],

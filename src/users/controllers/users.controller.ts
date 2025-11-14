@@ -1,7 +1,19 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Req,
+  UseGuards,
+  Put,
+  Param,
+  ParseIntPipe,
+  Body,
+  Delete,
+} from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { UsersService } from '../services/users.service';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { UpdateUserDto } from '../dto';
+import { UpdateUserResponseDto } from '../dto/update-user-response.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -39,5 +51,26 @@ export class UsersController {
   async getUserById(@Req() req: any) {
     const userId = req.user.sub;
     return this.usersService.findById(userId);
+  }
+
+  @Put(':id')
+  @ApiOperation({ summary: 'Update user by ID' })
+  @ApiParam({ name: 'id', description: 'User ID (number)', type: 'integer' })
+  @ApiResponse({ status: 200, description: 'User updated', type: UpdateUserResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateUserById(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateUserDto: UpdateUserDto,
+  ) {
+    return this.usersService.updateById(id, updateUserDto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete user by ID' })
+  @ApiParam({ name: 'id', description: 'User ID (number)', type: 'integer' })
+  @ApiResponse({ status: 200, description: 'User deleted' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async deleteUserById(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.deleteById(id);
   }
 }
