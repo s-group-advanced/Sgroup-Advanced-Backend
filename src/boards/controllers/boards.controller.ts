@@ -46,6 +46,7 @@ import { WorkspacePermission } from 'src/common/enum/permission/workspace-permis
 import { BoardPermissionGuard } from 'src/common/guards/board-permission.guard';
 import { BoardRole } from 'src/common/enum/role/board-role.enum';
 import { BoardRoles } from 'src/common/decorators/board-roles.decorator';
+import { CreateFromTemplateDto } from '../dto/create-from-template.dto';
 
 @ApiTags('Boards')
 @ApiBearerAuth()
@@ -69,6 +70,22 @@ export class BoardsController {
     @Request() req: any,
   ) {
     return this.boardsService.create(createBoardDto, req.user.sub);
+  }
+
+  @Post('template')
+  @UseGuards(WorkspaceRoleGuard)
+  @WorkspaceRoles('owner', 'member')
+  @RequireWorkspacePermissions(WorkspacePermission.CREATE_BOARD)
+  @ApiOperation({ summary: 'Create a new board from template' })
+  @ApiResponse({ status: 201, description: 'Board created successfully from template' })
+  @ApiResponse({ status: 403, description: 'Forbidden - only workspace owners can create boards' })
+  @ApiResponse({ status: 404, description: 'Workspace or Template not found' })
+  async createBoardFromTemplate(
+    @Request() req: any,
+    @Body(new ValidationPipe({ transform: true, whitelist: true }))
+    createFromTemplateDto: CreateFromTemplateDto,
+  ) {
+    return this.boardsService.createBoardFromTemplate(req.user.sub, createFromTemplateDto);
   }
 
   @Get()
@@ -269,6 +286,7 @@ export class BoardsController {
     return this.boardsService.createList(id, dto);
   }
 
+  // Update list name
   @Patch(':id/lists/:listId')
   @UseGuards(BoardPermissionGuard)
   @BoardRoles(BoardRole.MEMBER, BoardRole.OWNER)

@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsNumber } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCommentDto {
@@ -30,10 +30,10 @@ export class UpdateChecklistDto {
   @IsOptional()
   name?: string;
 
-  @ApiProperty({ example: '1' })
-  @IsString()
+  @ApiProperty({ example: 1 })
+  @IsNumber()
   @IsOptional()
-  position?: string;
+  position?: number;
 }
 
 export class CreateChecklistItemDto {
@@ -58,10 +58,10 @@ export class UpdateChecklistItemDto {
   @IsOptional()
   is_completed?: boolean;
 
-  @ApiProperty({ example: '1' })
-  @IsString()
+  @ApiProperty({ example: 1 })
+  @IsNumber()
   @IsOptional()
-  position?: string;
+  position?: number;
 }
 
 export class AddLabelToCardDto {

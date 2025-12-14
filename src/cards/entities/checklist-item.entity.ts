@@ -24,8 +24,8 @@ export class ChecklistItem {
 
   @ApiProperty()
   @ApiProperty()
-  @Column({ type: 'bigint', default: 0 })
-  position!: string;
+  @Column({ type: 'float', default: 0 })
+  position!: number;
 
   @ApiProperty()
   @ApiProperty()

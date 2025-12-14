@@ -35,12 +35,11 @@ export class CardsService {
 
   // ============ Cards CRUD ============
   async create(createCardDto: CreateCardDto, userId: string): Promise<Card> {
-    const position =
-      createCardDto.position || (await this.getNextPosition(createCardDto.list_id)).toString();
+    const position = createCardDto.position ?? (await this.getNextPosition(createCardDto.list_id));
 
     const card = this.cardRepository.create({
       ...createCardDto,
-      position,
+      position: Number(position),
       created_by: userId,
     });
     return this.cardRepository.save(card);
@@ -76,6 +75,7 @@ export class CardsService {
   async update(id: string, updateCardDto: UpdateCardDto): Promise<Card> {
     await this.cardRepository.update(id, {
       ...updateCardDto,
+      position: updateCardDto.position !== undefined ? Number(updateCardDto.position) : undefined,
       updated_at: new Date(),
     });
     return this.findOne(id);
@@ -155,12 +155,12 @@ export class CardsService {
       .where('checklist.card_id = :cardId', { cardId })
       .select('MAX(checklist.position)', 'max')
       .getRawOne();
-    const position = maxPos?.max ? (BigInt(maxPos.max) + BigInt(1)).toString() : '0';
+    const position = maxPos?.max ? Number(maxPos.max) + 1 : 1;
 
     const checklist = this.checklistRepository.create({
       card_id: cardId,
       name: dto.name,
-      position,
+      position: Number(position),
     });
     return this.checklistRepository.save(checklist);
   }
@@ -200,7 +200,7 @@ export class CardsService {
       .where('item.checklist_id = :checklistId', { checklistId })
       .select('MAX(item.position)', 'max')
       .getRawOne();
-    const position = maxPos?.max ? (BigInt(maxPos.max) + BigInt(1)).toString() : '0';
+    const position = maxPos?.max ? Number(maxPos.max) + 1 : 1;
 
     const item = this.checklistItemRepository.create({
       checklist_id: checklistId,
@@ -258,12 +258,13 @@ export class CardsService {
   }
 
   // Helper
-  private async getNextPosition(listId: string): Promise<bigint> {
+  private async getNextPosition(listId: string): Promise<number> {
+    // ✅ Đổi từ bigint sang number
     const maxPos = await this.cardRepository
       .createQueryBuilder('card')
       .where('card.list_id = :listId', { listId })
       .select('MAX(card.position)', 'max')
       .getRawOne();
-    return maxPos?.max ? BigInt(maxPos.max) + BigInt(1) : BigInt(0);
+    return maxPos?.max ? Number(maxPos.max) + 1 : 1;
   }
 }

@@ -1,6 +1,12 @@
-import { Inject, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Brackets } from 'typeorm';
+import { Repository, Brackets, DataSource } from 'typeorm';
 import { Board, BoardVisibility } from '../entities/board.entity';
 import { BoardMember } from '../entities/board-member.entity';
 import { List } from '../entities/list.entity';
@@ -29,6 +35,8 @@ import { BoardRole } from 'src/common/enum/role/board-role.enum';
 import { MailService } from '../../mail/mail.service';
 import { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis.module';
+import { CreateFromTemplateDto } from '../dto/create-from-template.dto';
+import { BoardTemplate } from 'src/board-templates/entities/board-templates.entity';
 
 // dữ liệu lưu trong Redis cho email invitation token
 interface InvitationCachePayload {
@@ -57,6 +65,7 @@ export class BoardsService {
   private static readonly INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
   constructor(
+    private dataSource: DataSource,
     @InjectRepository(Board)
     private readonly boardRepository: Repository<Board>,
     @InjectRepository(BoardMember)
@@ -78,6 +87,8 @@ export class BoardsService {
     private readonly mailService: MailService,
     @Inject(REDIS_CLIENT)
     private readonly redisClient: Redis,
+    @InjectRepository(BoardTemplate)
+    private readonly boardTemplateRepository: Repository<BoardTemplate>,
   ) {}
 
   // Boards CRUD
@@ -795,5 +806,99 @@ export class BoardsService {
 
   private getAppUrl(): string {
     return process.env.APP_URL || 'http://localhost:5000';
+  }
+
+  // Board Template Methods
+  async createBoardFromTemplate(userId: string, dto: CreateFromTemplateDto) {
+    // Get data from board template
+    const template = await this.boardTemplateRepository.findOne({
+      where: { id: dto.templateId },
+      relations: ['lists', 'lists.cards'],
+      order: {
+        lists: { position: 'ASC' },
+      },
+    });
+    if (!template) throw new NotFoundException('Board template not found');
+
+    // Initialize Transaction
+    const queryRunner = this.dataSource.createQueryRunner(); // createQueryRunner() dùng để khởi tạo một query runner mới
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. Create new board
+      const newBoard = queryRunner.manager.create(Board, {
+        name: dto.boardName || template.name,
+        description: template.description,
+        cover_url: template.cover_url,
+        workspace_id: dto.workspaceId,
+        created_by: userId,
+        is_closed: false,
+        invite_link_token: this.generateToken(),
+        visibility: BoardVisibility.PUBLIC,
+      });
+      if (!newBoard) throw new BadRequestException('Failed to create board from template');
+      const savedBoard = await queryRunner.manager.save(newBoard);
+
+      // 2. Add Board Owner
+      const ownerMember = queryRunner.manager.create(BoardMember, {
+        board_id: savedBoard.id,
+        user_id: userId,
+        role: BoardRole.OWNER,
+      });
+      await queryRunner.manager.save(ownerMember);
+
+      // 3. Process Lists and Cards from template
+      const allCardsToInsert: any[] = [];
+
+      for (const templateList of template.lists || []) {
+        // a. Create Real List
+        const newList = queryRunner.manager.create(List, {
+          board_id: savedBoard.id,
+          title: templateList.name,
+          name: templateList.name,
+          position: templateList.position,
+          cover_img: templateList.cover_img || null,
+          archived: false,
+        });
+        const savedList = await queryRunner.manager.save(newList);
+
+        // b. Map Cards
+        if (templateList.cards && templateList.cards.length > 0) {
+          const mappedCards = templateList.cards.map((templateCard) => ({
+            list_id: savedList.id,
+            title: templateCard.title,
+            description: templateCard.description,
+            position: templateCard.position,
+            priority: templateCard.priority,
+            created_by: userId,
+            created_at: new Date(),
+            updated_at: new Date(),
+          }));
+
+          allCardsToInsert.push(...mappedCards);
+        }
+      }
+
+      // throw new InternalServerErrorException('Test rollback transaction'); // test rollback
+
+      // 4. Bulk Insert all cards
+      if (allCardsToInsert.length > 0) {
+        await queryRunner.manager.insert(Card, allCardsToInsert);
+      }
+
+      // Commit transaction
+      await queryRunner.commitTransaction();
+
+      return savedBoard;
+    } catch (err) {
+      // have any error => ROLLBACK transaction
+      await queryRunner.rollbackTransaction();
+      console.error('Error creating board from template:', err);
+      throw err;
+    } finally {
+      // Giải phóng kết nối
+      await queryRunner.release();
+    }
   }
 }

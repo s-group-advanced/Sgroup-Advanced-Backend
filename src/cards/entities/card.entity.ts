@@ -42,8 +42,8 @@ export class Card {
 
   @ApiProperty()
   @ApiProperty()
-  @Column({ type: 'bigint', default: 0 })
-  position!: string;
+  @Column({ type: 'float', default: 0 })
+  position!: number;
 
   // composite index list_id + position for fast ordering
   @Index('idx_cards_list_pos1', ['list_id', 'position'])

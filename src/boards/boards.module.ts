@@ -18,6 +18,10 @@ import { User } from '../users/entities/user.entity';
 import { WorkspaceRoleGuard } from 'src/common/guards/workspace-role.guard';
 import { BoardPermissionGuard } from 'src/common/guards/board-permission.guard';
 import { MailModule } from '../mail/mail.module';
+import { BoardTemplatesModule } from 'src/board-templates/board-templates.module';
+import { BoardTemplate } from 'src/board-templates/entities/board-templates.entity';
+import { ListTemplate } from 'src/board-templates/entities/list-templates.entity';
+import { CardTemplate } from 'src/board-templates/entities/card-templates.entity';
 
 @Module({
   imports: [
@@ -31,6 +35,10 @@ import { MailModule } from '../mail/mail.module';
       Workspace,
       User,
       Card,
+      BoardTemplate,
+      ListTemplate,
+      CardTemplate,
+      BoardTemplatesModule,
     ]),
     JwtModule.register({}),
     ConfigModule,
