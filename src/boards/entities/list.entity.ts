@@ -1,6 +1,15 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, Index } from 'typeorm';
+import {
+  Column,
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  Index,
+  OneToMany,
+  JoinColumn,
+} from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Board } from './board.entity';
+import { Card } from 'src/cards/entities/card.entity';
 
 @Entity('lists')
 export class List {
@@ -14,6 +23,7 @@ export class List {
   board_id!: string;
 
   @ManyToOne(() => Board, (b) => b.lists, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'board_id' })
   // board join column is board_id
   board?: Board;
 
@@ -39,4 +49,7 @@ export class List {
   @ApiProperty()
   @Column({ type: 'text', nullable: true })
   cover_img!: string | null;
+
+  @OneToMany(() => Card, (card) => card.list)
+  cards?: Card[];
 }

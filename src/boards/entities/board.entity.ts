@@ -61,7 +61,7 @@ export class Board extends BaseEntityTimestamps {
   @OneToMany(() => BoardMember, (bm) => bm.board)
   members?: BoardMember[];
 
-  @OneToMany(() => List, (l) => l)
+  @OneToMany(() => List, (l) => l.board)
   lists?: List[];
 
   @OneToMany(() => BoardInvitation, (inv) => inv.board)
