@@ -30,10 +30,6 @@ import {
   UpdateCardDto,
   CreateCommentDto,
   UpdateCommentDto,
-  CreateChecklistDto,
-  UpdateChecklistDto,
-  CreateChecklistItemDto,
-  UpdateChecklistItemDto,
   AddLabelToCardDto,
   MoveCardDto,
   AddCardMemberDto,
@@ -45,6 +41,10 @@ import { BoardRole } from 'src/common/enum/role/board-role.enum';
 import { BoardRoles } from 'src/common/decorators/board-roles.decorator';
 import { CreateAttachmentDto } from '../dto/create-attachment.dto';
 import { SetCoverDto } from '../dto/set-cover.dto';
+import { CreateChecklistDto } from '../dto/create-checklist.dto';
+import { UpdateChecklistDto } from '../dto/update-checklist.dto';
+import { CreateChecklistItemDto } from '../dto/create-checklist-item.dto';
+import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
 
 @ApiTags('Cards')
 @ApiBearerAuth()
@@ -281,6 +281,16 @@ export class CardsController {
     @Param('itemId') itemId: string,
   ) {
     await this.cardsService.removeChecklistItem(checklistId, itemId);
+  }
+
+  // get checklist items by checklist id
+  @Get(':id/checklists/:checklistId/items')
+  @ApiOperation({ summary: 'Get all items for a checklist' })
+  @ApiParam({ name: 'id', description: 'Card ID' })
+  @ApiParam({ name: 'checklistId', description: 'Checklist ID' })
+  @ApiResponse({ status: 200, description: 'List of checklist items' })
+  async getChecklistItems(@Param('checklistId') checklistId: string) {
+    return this.cardsService.getChecklistItems(checklistId);
   }
 
   // ============ Labels ============

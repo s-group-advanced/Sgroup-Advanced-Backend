@@ -21,15 +21,15 @@ import {
   UpdateCardDto,
   CreateCommentDto,
   UpdateCommentDto,
-  CreateChecklistDto,
-  UpdateChecklistDto,
-  CreateChecklistItemDto,
-  UpdateChecklistItemDto,
   AddLabelToCardDto,
   AddCardMemberDto,
   CardMemberResponseDto,
 } from '../dto';
 import { UpdateCardDueDateDto } from '../dto/update-card-due-date.dto';
+import { CreateChecklistDto } from '../dto/create-checklist.dto';
+import { UpdateChecklistDto } from '../dto/update-checklist.dto';
+import { CreateChecklistItemDto } from '../dto/create-checklist-item.dto';
+import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
 
 @Injectable()
 export class CardsService {
@@ -269,12 +269,14 @@ export class CardsService {
 
   // ============ Checklists ============
   async createChecklist(cardId: string, dto: CreateChecklistDto): Promise<Checklist> {
+    // Tìm vị trí lớn nhất hiện có
     const maxPos = await this.checklistRepository
       .createQueryBuilder('checklist')
       .where('checklist.card_id = :cardId', { cardId })
       .select('MAX(checklist.position)', 'max')
       .getRawOne();
-    const position = maxPos?.max ? Number(maxPos.max) + 1 : 1;
+
+    const position = maxPos?.max ? Number(maxPos.max) + 65535 : 65535;
 
     const checklist = this.checklistRepository.create({
       card_id: cardId,
@@ -289,7 +291,16 @@ export class CardsService {
     checklistId: string,
     dto: UpdateChecklistDto,
   ): Promise<Checklist> {
+    // Kiểm tra checklist có tồn tại không và thuộc về cardId không
+    const checkListValid = await this.checklistRepository.findOne({
+      where: { id: checklistId, card_id: cardId },
+    });
+    if (!checkListValid) {
+      throw new NotFoundException('Checklist not found');
+    }
+
     await this.checklistRepository.update({ id: checklistId, card_id: cardId }, dto);
+
     const updated = await this.checklistRepository.findOne({ where: { id: checklistId } });
     if (!updated) {
       throw new NotFoundException('Checklist not found');
@@ -298,28 +309,40 @@ export class CardsService {
   }
 
   async removeChecklist(cardId: string, checklistId: string): Promise<void> {
-    await this.checklistRepository.delete({ id: checklistId, card_id: cardId });
+    // Kiểm tra checklist có tồn tại không và thuộc về cardId không
+    const checkListValid = await this.checklistRepository.findOne({
+      where: { id: checklistId, card_id: cardId },
+    });
+    if (!checkListValid) {
+      throw new NotFoundException('Checklist not found');
+    }
+
+    const result = await this.checklistRepository.delete({ id: checklistId, card_id: cardId });
+
+    if (result.affected === 0) {
+      throw new NotFoundException('Checklist not found');
+    }
   }
 
   async getCardChecklists(cardId: string): Promise<Checklist[]> {
     return this.checklistRepository.find({
       where: { card_id: cardId },
       relations: ['items'],
-      order: { position: 'ASC' },
+      order: {
+        position: 'ASC',
+        items: { position: 'ASC' },
+      },
     });
   }
 
   // ============ Checklist Items ============
-  async createChecklistItem(
-    checklistId: string,
-    dto: CreateChecklistItemDto,
-  ): Promise<ChecklistItem> {
+  async createChecklistItem(checklistId: string, dto: CreateChecklistItemDto): Promise<any> {
     const maxPos = await this.checklistItemRepository
       .createQueryBuilder('item')
       .where('item.checklist_id = :checklistId', { checklistId })
       .select('MAX(item.position)', 'max')
       .getRawOne();
-    const position = maxPos?.max ? Number(maxPos.max) + 1 : 1;
+    const position = maxPos?.max ? Number(maxPos.max) + 65535 : 65535;
 
     const item = this.checklistItemRepository.create({
       checklist_id: checklistId,
@@ -327,35 +350,70 @@ export class CardsService {
       is_checked: dto.is_completed ?? false,
       position,
     });
-    return this.checklistItemRepository.save(item);
+
+    if (dto.is_completed) {
+      item.completed_at = new Date();
+    }
+
+    await this.checklistItemRepository.save(item);
+    return this.getChecklistWithItems(item.checklist_id);
   }
 
   async updateChecklistItem(
     checklistId: string,
     itemId: string,
     dto: UpdateChecklistItemDto,
-  ): Promise<ChecklistItem> {
+  ): Promise<any> {
     const updateData: any = {};
+
     if (dto.name !== undefined) updateData.content = dto.name;
+
     if (dto.is_completed !== undefined) {
       updateData.is_checked = dto.is_completed;
+      // Tự động cập nhật thời gian hoàn thành
       updateData.completed_at = dto.is_completed ? new Date() : null;
     }
+
     if (dto.position !== undefined) updateData.position = dto.position;
 
-    await this.checklistItemRepository.update(
+    const result = await this.checklistItemRepository.update(
       { id: itemId, checklist_id: checklistId },
       updateData,
     );
-    const updated = await this.checklistItemRepository.findOne({ where: { id: itemId } });
-    if (!updated) {
+
+    if (result.affected === 0) {
       throw new NotFoundException('Checklist item not found');
     }
-    return updated;
+
+    return this.getChecklistWithItems(checklistId);
   }
 
-  async removeChecklistItem(checklistId: string, itemId: string): Promise<void> {
-    await this.checklistItemRepository.delete({ id: itemId, checklist_id: checklistId });
+  async removeChecklistItem(checklistId: string, itemId: string): Promise<any> {
+    const result = await this.checklistItemRepository.delete({
+      id: itemId,
+      checklist_id: checklistId,
+    });
+    if (result.affected === 0) {
+      throw new NotFoundException('Checklist item not found');
+    }
+
+    return this.getChecklistWithItems(checklistId);
+  }
+
+  private async getChecklistWithItems(checklistId: string) {
+    return this.checklistRepository.findOne({
+      where: { id: checklistId },
+      relations: ['items'],
+      order: { items: { position: 'ASC' } },
+    });
+  }
+
+  // get checklist items by checklist id
+  async getChecklistItems(checklistId: string): Promise<ChecklistItem[]> {
+    return this.checklistItemRepository.find({
+      where: { checklist_id: checklistId },
+      order: { position: 'ASC' },
+    });
   }
 
   // ============ Card Labels ============

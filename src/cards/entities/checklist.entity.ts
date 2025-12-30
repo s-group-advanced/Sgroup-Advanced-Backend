@@ -6,6 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  AfterLoad,
 } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 import { Card } from './card.entity';
@@ -41,4 +42,19 @@ export class Checklist {
 
   @OneToMany(() => ChecklistItem, (item) => item.checklist)
   items?: ChecklistItem[];
+
+  // Virtual property to calculate percentage of completed items
+  @ApiProperty({ description: 'Percentage of completed items (0-100)', example: 75 })
+  progress?: number;
+
+  @AfterLoad()
+  calculateProgress() {
+    if (!this.items || this.items.length === 0) {
+      this.progress = 0;
+      return;
+    }
+
+    const completed = this.items.filter((i) => i.is_checked).length;
+    this.progress = Math.round((completed / this.items.length) * 100);
+  }
 }
