@@ -12,6 +12,7 @@ import {
   HttpStatus,
   ValidationPipe,
   Query,
+  Sse,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -45,6 +46,9 @@ import { CreateChecklistDto } from '../dto/create-checklist.dto';
 import { UpdateChecklistDto } from '../dto/update-checklist.dto';
 import { CreateChecklistItemDto } from '../dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
+// SSE
+import { Observable } from 'rxjs';
+import { MessageEvent } from '@nestjs/common';
 
 @ApiTags('Cards')
 @ApiBearerAuth()
@@ -157,6 +161,15 @@ export class CardsController {
   @ApiResponse({ status: 200, description: 'List of comments' })
   async getCardComments(@Param('id') id: string) {
     return this.cardsService.getCardComments(id);
+  }
+
+  // get comment stream by card id
+  @Sse(':id/comments/stream')
+  @ApiOperation({ summary: 'Subscribe to comment stream for a card' })
+  @ApiParam({ name: 'id', description: 'Card ID' })
+  @ApiResponse({ status: 200, description: 'Comment stream established' })
+  commentStream(@Param('id') id: string): Observable<MessageEvent> {
+    return this.cardsService.getCommentStream(id);
   }
 
   @Post(':id/comments')

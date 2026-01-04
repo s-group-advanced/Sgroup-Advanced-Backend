@@ -31,9 +31,12 @@ import { CreateChecklistDto } from '../dto/create-checklist.dto';
 import { UpdateChecklistDto } from '../dto/update-checklist.dto';
 import { CreateChecklistItemDto } from '../dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
+import { Observable, Subject } from 'rxjs';
 
 @Injectable()
 export class CardsService {
+  private commentSubjects = new Map<string, Subject<any>>();
+
   constructor(
     @InjectRepository(Card)
     private readonly cardRepository: Repository<Card>,
@@ -189,7 +192,19 @@ export class CardsService {
       commentId: saved.id,
       body: dto.body,
     });
-    return saved;
+
+    // emit comment to subscribers
+    const commentWithAuthor = await this.commentRepository.findOne({
+      where: { id: saved.id },
+      relations: ['author'],
+    });
+    this.emitCommentToSubscribers(cardId, {
+      event: 'comment_created',
+      data: commentWithAuthor,
+      timestamp: new Date().toISOString(),
+    });
+
+    return commentWithAuthor!;
   }
 
   async updateComment(
@@ -217,6 +232,13 @@ export class CardsService {
     }
     // Ghi log
     await this.logActivity(cardId, userId, 'comment_updated', { commentId, newBody: dto.body });
+
+    // emit updated comment to subscribers
+    this.emitCommentToSubscribers(cardId, {
+      event: 'comment_updated',
+      data: updated,
+      timestamp: new Date().toISOString(),
+    });
     return updated;
   }
 
@@ -234,6 +256,13 @@ export class CardsService {
     await this.cardRepository.decrement({ id: cardId }, 'comments_count', 1);
     // Ghi log
     await this.logActivity(cardId, userId, 'comment_deleted', { commentId });
+
+    // emit deleted comment to subscribers
+    this.emitCommentToSubscribers(cardId, {
+      event: 'comment_deleted',
+      data: { id: commentId },
+      timestamp: new Date().toISOString(),
+    });
   }
 
   async getCardComments(cardId: string): Promise<Comment[]> {
@@ -242,6 +271,62 @@ export class CardsService {
       relations: ['author'],
       order: { created_at: 'ASC' },
     });
+  }
+
+  // SSE stream for comments of cards
+  getCommentStream(cardId: string): Observable<MessageEvent> {
+    if (!this.commentSubjects.has(cardId)) {
+      this.commentSubjects.set(cardId, new Subject<any>());
+    }
+
+    const subject = this.commentSubjects.get(cardId)!;
+
+    return new Observable<MessageEvent>((observer) => {
+      const subscription = subject.subscribe({
+        next: (data) => {
+          console.log('Sending SSE event to client:', data);
+          observer.next({
+            data: JSON.stringify(data),
+          } as MessageEvent);
+        },
+        error: (err) => {
+          console.error('SSE stream error:', err);
+          observer.error(err);
+        },
+        complete: () => {
+          console.log('SSE stream completed');
+          observer.complete();
+        },
+      });
+
+      // Cleanup khi client disconnect
+      return () => {
+        subscription.unsubscribe();
+
+        // Cleanup subject nếu không còn subscribers
+        if (subject.observers.length === 0) {
+          this.commentSubjects.delete(cardId);
+        }
+      };
+    });
+  }
+
+  // Emit new comment to all subscribers
+  private emitCommentToSubscribers(cardId: string, payload: any) {
+    if (this.commentSubjects.has(cardId)) {
+      const subject = this.commentSubjects.get(cardId)!;
+      subject.next(payload);
+    }
+  }
+
+  // cleanup subject when no subscribers
+  private cleanupCommentSubject(cardId: string) {
+    if (this.commentSubjects.has(cardId)) {
+      const subject = this.commentSubjects.get(cardId)!;
+      if (subject.observers.length === 0) {
+        this.commentSubjects.delete(cardId);
+      }
+    }
   }
 
   // ============ Card Due Date ============

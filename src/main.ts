@@ -26,10 +26,13 @@ async function bootstrap() {
       /^http:\/\/localhost:\d+$/,
       /^http:\/\/127\.0\.0\.1:\d+$/,
       process.env.CORS_ORIGIN ?? '',
+      'http://localhost:5173/react-app',
+      'http://localhost:5173/',
     ].filter(Boolean) as any,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Type'],
   });
 
   const config = new DocumentBuilder()
