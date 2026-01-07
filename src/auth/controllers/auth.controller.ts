@@ -257,15 +257,18 @@ export class AuthController {
 
   @Public()
   @Get('reset-password')
-  @ApiOperation({ summary: 'Validate reset password token' })
+  @ApiOperation({ summary: 'Validate reset password token and redirect to FE' })
   @ApiQuery({ name: 'token', description: 'Reset password token' })
-  @ApiResponse({ status: 200, description: 'Token is valid' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired token' })
+  @ApiResponse({ status: 302, description: 'Redirect to frontend' })
   async validateResetPasswordToken(
     @Query('token') token: string,
-  ): Promise<{ valid: boolean; message: string }> {
+    @Res() res: Response,
+  ): Promise<void> {
     const result = await this.authService.validateResetToken(token);
-    return result;
+
+    if (result.redirectUrl) {
+      res.redirect(result.redirectUrl);
+    }
   }
 
   @Public()

@@ -321,20 +321,37 @@ export class AuthService {
     return { message: 'Password reset successfully. You can now login with your new password.' };
   }
 
-  async validateResetToken(token: string): Promise<{ valid: boolean; message: string }> {
+  async validateResetToken(
+    token: string,
+  ): Promise<{ valid: boolean; message: string; redirectUrl?: string }> {
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173/react-app';
+
     const user = await this.userRepository.findOne({
       where: { reset_password_token: token },
     });
 
     if (!user) {
-      return { valid: false, message: 'Invalid reset token' };
+      return {
+        valid: false,
+        message: 'Invalid reset token',
+        redirectUrl: `${frontendUrl}/reset-password-error?message=${encodeURIComponent('Invalid reset token')}`,
+      };
     }
 
     if (!user.reset_password_token_expires || user.reset_password_token_expires < new Date()) {
-      return { valid: false, message: 'Reset token has expired' };
+      return {
+        valid: false,
+        message: 'Reset token has expired',
+        redirectUrl: `${frontendUrl}/reset-password-error?message=${encodeURIComponent('Reset token has expired')}`,
+      };
     }
 
-    return { valid: true, message: 'Token is valid' };
+    return {
+      valid: true,
+      message: 'Token is valid',
+      redirectUrl: `${frontendUrl}/change-password?token=${token}`,
+    };
   }
 
   async updatePassword(
