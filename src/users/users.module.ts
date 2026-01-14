@@ -17,6 +17,7 @@ import { List } from '../boards/entities/list.entity';
 import { Board } from '../boards/entities/board.entity';
 import { Workspace } from '../workspaces/entities/workspace.entity';
 import { AuthModule } from 'src/auth/auth.module';
+import { UploadService } from 'src/upload/upload.service';
 
 @Module({
   imports: [
@@ -40,7 +41,7 @@ import { AuthModule } from 'src/auth/auth.module';
     MailModule,
   ],
   controllers: [UsersController],
-  providers: [UsersService],
+  providers: [UsersService, UploadService],
   exports: [UsersService],
 })
 export class UsersModule {}

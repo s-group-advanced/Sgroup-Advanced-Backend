@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import { User } from '../entities/user.entity';
 import { UpdateUserDto } from '../dto';
 import { MailService } from '../../mail/mail.service';
+import { UploadService } from 'src/upload/upload.service';
 
 @Injectable()
 export class UsersService {
@@ -17,6 +18,7 @@ export class UsersService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly mailService: MailService,
+    private readonly uploadService: UploadService,
   ) {}
 
   async findById(id: string): Promise<Omit<User, 'password' | 'verification_token'>> {
@@ -71,6 +73,15 @@ export class UsersService {
     // Defensive: do not allow clients to change primary id via body
     if ((updateUserDto as any).id && (updateUserDto as any).id !== id) {
       throw new BadRequestException('Cannot change user id');
+    }
+
+    // validate avatar url
+    if (updateUserDto.avatar_url) {
+      const isValid = this.uploadService.validateCloudinaryUrl(updateUserDto.avatar_url, id);
+
+      if (!isValid) {
+        throw new BadRequestException('Invalid avatar URL');
+      }
     }
 
     // Check if email is being updated

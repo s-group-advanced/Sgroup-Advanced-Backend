@@ -15,6 +15,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { RedisModule } from './common/redis.module';
 import { BoardTemplatesModule } from './board-templates/board-templates.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { BoardTemplatesModule } from './board-templates/board-templates.module';
     AuthModule,
     RedisModule,
     BoardTemplatesModule,
+    UploadModule,
   ],
   controllers: [HealthController],
   providers: [
