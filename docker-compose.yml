@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # Database Service
+  db:
+    image: postgres:15
+    container_name: trolle_db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=training_backend
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+  
+  # REDIS
+  redis:
+    image: redis:alpine
+    container_name: trolle_redis
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # BACKEND
+  backend:
+    build:
+      context: .
+    container_name: trolle_backend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASS=${DB_PASS}
+      - DB_NAME=training_backend
+      - DB_SYNC=true
+      - CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}
+      - CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}
+      - CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET_REFRESH=${JWT_SECRET_REFRESH}
+      - MAIL_HOST=${MAIL_HOST}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_USER=${MAIL_USER}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - MAIL_FROM=${MAIL_FROM}
+      - MAIL_FROM_NAME=Sgroup Backend
+      - APP_URL=http://localhost:5000
+      - FE_URL=${FE_URL}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_USERNAME=default
+      - PORT=5000
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  # FRONT END
+  frontend:
+    build:
+      context: ../Frontend/my-app
+      dockerfile: Dockerfile
+    container_name: trolle_frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:5000
+      - VITE_CLOUDINARY_CLOUD_NAME=dnswn0tfq
+      - VITE_CLOUDINARY_UPLOAD_PRESET=Trolle
+    volumes:
+      - ../Frontend/my-app:/app
+      - /app/node_modules
+
+volumes:
+  pgdata:
