@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
+import { getWorkspaceInvitationEmailTemplate } from 'src/workspaces/mail/workspaceInvitationEmailTemplate';
 
 @Injectable()
 export class MailService {
@@ -66,28 +67,28 @@ export class MailService {
 
   async sendNotificationAddWorkspace(
     email: string,
-    name: string,
+    userName: string,
     workspaceName: string,
-    invitedBy: string,
+    inviterName: string,
     token: string,
   ): Promise<void> {
-    try {
-      this.mailerService.sendMail({
-        to: email,
-        subject: `You've been added to ${workspaceName} workspace`,
-        template: 'add-workspace-notification',
-        context: {
-          name,
-          workspaceName,
-          invitedBy: invitedBy || 'Team',
-          acceptInvite: `${this.configService.get('APP_URL', 'http://localhost:5000')}/api/workspaces/accept-invitation?token=${token}`,
-          rejectInvite: `${this.configService.get('APP_URL', 'http://localhost:5000')}/api/workspaces/reject-invitation?token=${token}`,
-        },
-      });
-    } catch (error) {
-      console.error('Failed to send workspace notification email:', error);
-      // Don't throw error to avoid breaking the add member flow
-    }
+    const baseUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+    const acceptUrl = `${baseUrl}/api/workspaces/accept-invitation?token=${token}`;
+    const rejectUrl = `${baseUrl}/api/workspaces/reject-invitation?token=${token}`;
+
+    const html = getWorkspaceInvitationEmailTemplate({
+      userName,
+      workspaceName,
+      inviterName,
+      acceptUrl,
+      rejectUrl,
+    });
+
+    await this.mailerService.sendMail({
+      to: email,
+      subject: `🎉 You've been invited to join ${workspaceName}`,
+      html,
+    });
   }
 
   async sendWelcomeToWorkspace(
@@ -98,7 +99,7 @@ export class MailService {
     invitedBy: string,
     workspaceId: string,
   ): Promise<void> {
-    const workspaceUrl = `${this.configService.get('FRONTEND_URL', 'http://localhost:5000')}/api/workspaces/${workspaceId}`;
+    const workspaceUrl = `${this.configService.get('FE_URL', 'http://localhost:5173/react-app')}/workspaces/${workspaceId}`;
 
     try {
       this.mailerService.sendMail({

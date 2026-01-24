@@ -9,6 +9,8 @@ import { MailService } from 'src/mail/mail.service';
 import * as crypto from 'crypto';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from 'src/common/redis.module';
+import { getInvitationAcceptedTemplate } from '../mail/invitationAcceptedTemplate';
+import { getInvitationRejectedTemplate } from '../mail/invitationRejectedTemplate';
 
 @Injectable()
 export class WorkspacesService {
@@ -67,12 +69,21 @@ export class WorkspacesService {
       relations: ['user'],
     });
 
-    const memberUserIds = members.map((m) => m.user_id);
+    const acceptedMemberUserIds = members
+      .filter((m) => m.status !== 'declined') // lọc những người đã từ chối
+      .map((m) => m.user_id)
+      .filter((id) => id !== null && id !== undefined);
+
+    if (acceptedMemberUserIds.length === 0) {
+      return userRepo.find({ order: { name: 'ASC' } });
+    }
 
     // find users not in memberUserIds
     const availableUsers = await userRepo
       .createQueryBuilder('user')
-      .where('user.id NOT IN (:...ids)', { ids: memberUserIds.length > 0 ? memberUserIds : [''] })
+      .where('user.id NOT IN (:...ids)', {
+        ids: acceptedMemberUserIds.length > 0 ? acceptedMemberUserIds : [''],
+      })
       .getMany();
 
     return availableUsers;
@@ -96,7 +107,7 @@ export class WorkspacesService {
     }
     // check existing membership directly in member repo
     const memberExists = await memberRepo.findOne({
-      where: { workspace_id: workspaceId, user_id: userInfo.id },
+      where: { workspace_id: workspaceId, user_id: userInfo.id, status: 'accepted' },
     });
     if (memberExists) {
       throw new BadRequestException('User is already a member of this workspace');
@@ -130,10 +141,12 @@ export class WorkspacesService {
       inviter.name || 'Team',
       token,
     );
+
+    console.log(`Invitation sent to ${userInfo.email} to join workspace ${workspace.name}`);
   }
 
   // Accept invitation
-  async acceptInvitation(token: string): Promise<{ message: string }> {
+  async acceptInvitation(token: string): Promise<{ html: string }> {
     // Tìm email từ token trong Redis
     const keys = await this.redis.keys('workspace_invite:*');
     let userEmail: string | null = null;
@@ -151,17 +164,25 @@ export class WorkspacesService {
     }
 
     const memberRepo = this.repo.manager.getRepository(WorkspaceMember);
+    const userRepo = this.repo.manager.getRepository(User);
 
+    // Tìm user theo email
+    const user = await userRepo.findOne({ where: { email: userEmail } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Tìm member với user_id và status pending
     const member = await memberRepo.findOne({
       where: {
-        user: { email: userEmail },
+        user_id: user.id,
         status: 'pending',
       },
       relations: ['workspace', 'user'],
     });
 
     if (!member) {
-      throw new NotFoundException('Invitation not found');
+      throw new NotFoundException('Invitation not found or already processed');
     }
 
     if (member.status !== 'pending') {
@@ -181,7 +202,7 @@ export class WorkspacesService {
       relations: ['user'],
     });
 
-    // Gửi email chào mừng với non-null assertion
+    // Gửi email chào mừng
     try {
       await this.mailService.sendWelcomeToWorkspace(
         member.user!.email,
@@ -199,22 +220,28 @@ export class WorkspacesService {
     const key = `workspace_invite:${userEmail}`;
     await this.redis.del(key);
 
+    const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+
     return {
-      message: 'Invitation accepted successfully',
+      html: getInvitationAcceptedTemplate({
+        workspaceName: member.workspace!.name,
+        inviterName: ownerMember?.user?.name || 'Team',
+        acceptedAt: new Date().toISOString(),
+        workspaceId: member.workspace!.id,
+        frontendUrl,
+      }),
     };
   }
 
   // Reject invitation
-  async rejectInvitation(token: string): Promise<{ message: string }> {
+  async rejectInvitation(token: string): Promise<{ html: string }> {
     // Tìm email từ token trong Redis
     const keys = await this.redis.keys('workspace_invite:*');
     let userEmail: string | null = null;
 
-    // Duyệt qua các keys để tìm key nào có value = token
     for (const key of keys) {
       const value = await this.redis.get(key);
       if (value === token) {
-        // Extract email from key: workspace_invite:email@example.com
         userEmail = key.replace('workspace_invite:', '');
         break;
       }
@@ -225,14 +252,21 @@ export class WorkspacesService {
     }
 
     const memberRepo = this.repo.manager.getRepository(WorkspaceMember);
+    const userRepo = this.repo.manager.getRepository(User);
 
-    // Tìm member với email và status pending
+    // Tìm user theo email
+    const user = await userRepo.findOne({ where: { email: userEmail } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Tìm member với user_id và status pending
     const member = await memberRepo.findOne({
       where: {
-        user: { email: userEmail },
+        user_id: user.id,
         status: 'pending',
       },
-      relations: ['workspace', 'user'],
+      relations: ['workspace'],
     });
 
     if (!member) {
@@ -243,7 +277,7 @@ export class WorkspacesService {
       throw new BadRequestException(`Invitation already ${member.status}`);
     }
 
-    // Update status to rejected
+    // Update status to declined
     member.status = 'declined';
     await memberRepo.save(member);
 
@@ -251,8 +285,20 @@ export class WorkspacesService {
     const key = `workspace_invite:${userEmail}`;
     await this.redis.del(key);
 
+    // Tìm owner
+    const ownerMember = await memberRepo.findOne({
+      where: {
+        workspace_id: member.workspace!.id,
+        role: 'owner',
+      },
+      relations: ['user'],
+    });
+
     return {
-      message: 'Invitation rejected successfully',
+      html: getInvitationRejectedTemplate({
+        workspaceName: member.workspace!.name,
+        inviterName: ownerMember?.user?.name || 'the team',
+      }),
     };
   }
 
