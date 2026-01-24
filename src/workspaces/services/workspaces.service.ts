@@ -57,6 +57,27 @@ export class WorkspacesService {
     await this.repo.remove(entity);
   }
 
+  // get list user not in workspace
+  async getAvailableUsersForWorkspace(workspaceId: string): Promise<User[]> {
+    const memberRepo = this.repo.manager.getRepository(WorkspaceMember);
+    const userRepo = this.repo.manager.getRepository(User);
+
+    const members = await memberRepo.find({
+      where: { workspace_id: workspaceId },
+      relations: ['user'],
+    });
+
+    const memberUserIds = members.map((m) => m.user_id);
+
+    // find users not in memberUserIds
+    const availableUsers = await userRepo
+      .createQueryBuilder('user')
+      .where('user.id NOT IN (:...ids)', { ids: memberUserIds.length > 0 ? memberUserIds : [''] })
+      .getMany();
+
+    return availableUsers;
+  }
+
   // add member to workspace
   async addMember(workspaceId: string, email: string, inviterId: string): Promise<void> {
     // ensure workspace exists

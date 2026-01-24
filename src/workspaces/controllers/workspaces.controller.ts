@@ -68,6 +68,16 @@ export class WorkspacesController {
     return this.service.findWorkspacesForUser(userId);
   }
 
+  // Lấy danh sách người dùng có thể thêm vào workspace (những người chưa phải là thành viên)
+  @ApiOperation({ summary: 'Get available users for workspace' })
+  @ApiOkResponse({ type: [Workspace] })
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @WorkspaceRoles('owner')
+  @Get(':id/available-users')
+  async getAvailableUsersForWorkspace(@Param('id') workspaceId: string) {
+    return this.service.getAvailableUsersForWorkspace(workspaceId);
+  }
+
   @ApiOperation({ summary: 'List workspaces' })
   @ApiOkResponse({ type: [Workspace] })
   @Get()

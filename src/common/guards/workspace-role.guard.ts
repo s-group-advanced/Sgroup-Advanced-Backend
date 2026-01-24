@@ -26,10 +26,10 @@ export class WorkspaceRoleGuard implements CanActivate {
     if (!user) throw new UnauthorizedException('User not authenticated');
 
     // Bypass cho Admin hệ thống
-    // Lưu ý: user.roles thường là mảng, nên dùng includes là đúng
     if (user.roles && user.roles.includes('admin')) return true;
 
-    const workspaceId = req.params.workspaceId || req.body?.workspaceId || req.query?.workspaceId;
+    const workspaceId =
+      req.params.workspaceId || req.body?.workspaceId || req.query?.workspaceId || req.params.id;
     if (!workspaceId) throw new BadRequestException('Workspace ID is required');
 
     // Query DB lấy member
