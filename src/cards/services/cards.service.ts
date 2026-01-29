@@ -193,14 +193,32 @@ export class CardsService {
       body: dto.body,
     });
 
+    // Ghi log
+    await this.logActivity(cardId, userId, 'comment_created', {
+      commentId: saved.id,
+      body: dto.body,
+    });
+
     // emit comment to subscribers
     const commentWithAuthor = await this.commentRepository.findOne({
       where: { id: saved.id },
       relations: ['author'],
     });
+
     this.emitCommentToSubscribers(cardId, {
       event: 'comment_created',
-      data: commentWithAuthor,
+      data: {
+        id: commentWithAuthor!.id,
+        body: commentWithAuthor?.body,
+        author: {
+          id: commentWithAuthor?.author?.id,
+          name: commentWithAuthor?.author?.name,
+          email: commentWithAuthor?.author?.email,
+          avatar_url: commentWithAuthor?.author?.avatar_url,
+        },
+        created_at: commentWithAuthor?.created_at,
+        edited_at: commentWithAuthor?.edited_at,
+      },
       timestamp: new Date().toISOString(),
     });
 
@@ -226,7 +244,10 @@ export class CardsService {
       body: dto.body,
       edited_at: new Date(),
     });
-    const updated = await this.commentRepository.findOne({ where: { id: commentId } });
+    const updated = await this.commentRepository.findOne({
+      where: { id: commentId },
+      relations: ['author'],
+    });
     if (!updated) {
       throw new NotFoundException('Comment not found after update');
     }
@@ -236,7 +257,18 @@ export class CardsService {
     // emit updated comment to subscribers
     this.emitCommentToSubscribers(cardId, {
       event: 'comment_updated',
-      data: updated,
+      data: {
+        id: updated.id,
+        body: updated.body,
+        author: {
+          id: updated.author?.id,
+          name: updated.author?.name,
+          email: updated.author?.email,
+          avatar_url: updated.author?.avatar_url,
+        },
+        created_at: updated.created_at,
+        edited_at: updated.edited_at,
+      },
       timestamp: new Date().toISOString(),
     });
     return updated;
@@ -260,7 +292,7 @@ export class CardsService {
     // emit deleted comment to subscribers
     this.emitCommentToSubscribers(cardId, {
       event: 'comment_deleted',
-      data: { id: commentId },
+      data: { id: commentId, cardId: cardId },
       timestamp: new Date().toISOString(),
     });
   }
