@@ -45,7 +45,7 @@ export class Card {
 
   @ApiProperty()
   @Index('idx_cards_board_id')
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', nullable: false })
   board_id!: string;
 
   @ManyToOne(() => Board, (b) => b, { onDelete: 'CASCADE' })

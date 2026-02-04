@@ -37,6 +37,8 @@ import { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis.module';
 import { CreateFromTemplateDto } from '../dto/create-from-template.dto';
 import { BoardTemplate } from 'src/board-templates/entities/board-templates.entity';
+import { Checklist } from 'src/cards/entities/checklist.entity';
+import { ChecklistItem } from 'src/cards/entities/checklist-item.entity';
 
 // dữ liệu lưu trong Redis cho email invitation token
 interface InvitationCachePayload {
@@ -84,6 +86,10 @@ export class BoardsService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Card)
     private readonly cardRepository: Repository<Card>,
+    @InjectRepository(Checklist)
+    private readonly checklistRepository: Repository<Checklist>,
+    @InjectRepository(ChecklistItem)
+    private readonly checklistItemRepository: Repository<ChecklistItem>,
     private readonly mailService: MailService,
     @Inject(REDIS_CLIENT)
     private readonly redisClient: Redis,
@@ -444,17 +450,70 @@ export class BoardsService {
       newPosition = maxPos?.max ? parseFloat(maxPos.max) + 1 : 0;
     }
 
-    await this.listRepository.update(
-      { id: listId },
-      { board_id: dto.targetBoardId, position: newPosition },
-    );
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    const updatedList = await this.listRepository.findOne({ where: { id: listId } });
-    if (!updatedList) {
-      throw new NotFoundException('Failed to update list');
+    try {
+      // 1. Update list board_id và position
+      await queryRunner.manager.update(
+        List,
+        { id: listId },
+        { board_id: dto.targetBoardId, position: newPosition },
+      );
+
+      await queryRunner.manager.update(Card, { list_id: listId }, { board_id: dto.targetBoardId });
+
+      // Lấy tất cả card_ids trong list
+      const cards = await queryRunner.manager.find(Card, {
+        where: { list_id: listId },
+        select: ['id'],
+      });
+      const cardIds = cards.map((c) => c.id);
+
+      if (cardIds.length > 0) {
+        // Lấy user_ids là members của target board
+        const targetBoardMembers = await queryRunner.manager.find(BoardMember, {
+          where: { board_id: dto.targetBoardId },
+          select: ['user_id'],
+        });
+        const validUserIds = targetBoardMembers.map((m) => m.user_id);
+
+        // Xóa card members không thuộc target board
+        if (validUserIds.length > 0) {
+          await queryRunner.manager
+            .createQueryBuilder()
+            .delete()
+            .from('card_members') // tên bảng card_members
+            .where('card_id IN (:...cardIds)', { cardIds })
+            .andWhere('user_id NOT IN (:...validUserIds)', { validUserIds })
+            .execute();
+        } else {
+          // Nếu target board không có member nào → xóa tất cả card members
+          await queryRunner.manager
+            .createQueryBuilder()
+            .delete()
+            .from('card_members')
+            .where('card_id IN (:...cardIds)', { cardIds })
+            .execute();
+        }
+      }
+
+      await queryRunner.commitTransaction();
+
+      const updatedList = await this.listRepository.findOne({ where: { id: listId } });
+      if (!updatedList) {
+        throw new NotFoundException('Failed to update list');
+      }
+
+      return updatedList;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('Error moving list:', error);
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    return updatedList;
   }
 
   async copyList(
@@ -486,45 +545,54 @@ export class BoardsService {
     // Check user has access to target board
     await this.checkBoardAccess(dto.targetBoardId, userId);
 
-    // Get all cards from source list AND get all lists in target board AND calculate max position in parallel
-    const [sourceCards, targetLists, maxPos] = await Promise.all([
-      this.cardRepository.find({
-        where: { list_id: listId },
-        order: { position: 'ASC' },
-      }),
-      this.listRepository.find({
-        where: { board_id: dto.targetBoardId },
-      }),
-      this.listRepository
-        .createQueryBuilder('list')
-        .where('list.board_id = :boardId', { boardId: dto.targetBoardId })
-        .select('MAX(list.position)', 'max')
-        .getRawOne(),
-    ]);
+    const [sourceCards, targetLists, maxPos, targetBoardMembers, targetBoardLabels] =
+      await Promise.all([
+        this.cardRepository.find({
+          where: { list_id: listId },
+          order: { position: 'ASC' },
+          relations: [
+            'cardMembers',
+            'cardMembers.user',
+            'labels',
+            'checklists',
+            'checklists.items',
+          ],
+        }),
+        this.listRepository.find({
+          where: { board_id: dto.targetBoardId },
+        }),
+        this.listRepository
+          .createQueryBuilder('list')
+          .where('list.board_id = :boardId', { boardId: dto.targetBoardId })
+          .select('MAX(list.position)', 'max')
+          .getRawOne(),
+        this.boardMemberRepository.find({
+          where: { board_id: dto.targetBoardId },
+          select: ['user_id'],
+        }),
+        this.labelRepository.find({
+          where: { board_id: dto.targetBoardId },
+        }),
+      ]);
 
     // Generate new list name with duplicate checking
     let newListName: string;
     let newListTitle: string;
 
     if (dto.newName) {
-      // If custom name provided, use it as-is
       newListName = dto.newName;
       newListTitle = dto.newName;
     } else {
-      // Generate default name with duplicate checking
       const baseName = sourceList.name;
       const baseTitle = sourceList.title;
       const copyPrefix = `(copy`;
 
-      // Check for existing copies in target board
       const existingCopies = targetLists.filter((list) => list.name.includes(copyPrefix));
 
       if (existingCopies.length === 0) {
-        // No copies exist, use default "(copy)"
         newListName = `${baseName} (copy)`;
         newListTitle = `${baseTitle} (copy)`;
       } else {
-        // Find the highest number in existing copies
         let maxCopyNumber = 1;
         existingCopies.forEach((list) => {
           const match = list.name.match(/\(copy (\d+)\)/);
@@ -533,7 +601,6 @@ export class BoardsService {
           }
         });
 
-        // Next copy number
         const nextCopyNumber = maxCopyNumber + 1;
         newListName = `${baseName} (copy ${nextCopyNumber})`;
         newListTitle = `${baseTitle} (copy ${nextCopyNumber})`;
@@ -550,25 +617,139 @@ export class BoardsService {
       name: newListName,
       position: newListPosition,
       archived: sourceList.archived,
+      cover_img: sourceList.cover_img,
     });
 
     const savedList = await this.listRepository.save(newList);
 
-    // Copy all cards from source list to new list in parallel
-    const copiedCards = await Promise.all(
-      sourceCards.map((sourceCard) =>
-        this.cardRepository.save(
-          this.cardRepository.create({
-            list_id: savedList.id,
-            title: sourceCard.title,
-            description: sourceCard.description,
-            position: sourceCard.position,
-            created_by: userId,
-            comments_count: 0,
-          }),
-        ),
-      ),
-    );
+    // Copy cards với members, labels, checklists
+    const copiedCards: Card[] = [];
+    const validUserIds = new Set(targetBoardMembers.map((m) => m.user_id));
+    const labelColorMap = new Map(targetBoardLabels.map((l) => [l.color, l]));
+
+    // Use transaction for data consistency
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      for (const sourceCard of sourceCards) {
+        // 1. Create card
+        const newCard = queryRunner.manager.create(Card, {
+          list_id: savedList.id,
+          board_id: dto.targetBoardId,
+          title: sourceCard.title,
+          description: sourceCard.description,
+          position: sourceCard.position,
+          created_by: userId,
+          comments_count: 0,
+          due_date: sourceCard.due_at,
+          priority: sourceCard.priority,
+          cover_color: sourceCard.cover_color,
+          archived: sourceCard.archived,
+          start_date: sourceCard.start_date,
+        });
+
+        const savedCard = await queryRunner.manager.save(Card, newCard);
+
+        // 2. Copy card members
+        if (sourceCard.cardMembers && sourceCard.cardMembers.length > 0) {
+          const cardMembersToInsert = sourceCard.cardMembers
+            .filter((cm) => validUserIds.has(cm.user_id))
+            .map((cm) => ({
+              card_id: savedCard.id,
+              user_id: cm.user_id,
+            }));
+
+          if (cardMembersToInsert.length > 0) {
+            await queryRunner.manager
+              .createQueryBuilder()
+              .insert()
+              .into('card_members')
+              .values(cardMembersToInsert)
+              .orIgnore()
+              .execute();
+          }
+        }
+
+        // 3. Copy labels
+        if (sourceCard.labels && sourceCard.labels.length > 0) {
+          const cardLabelsToInsert = [];
+
+          for (const sourceLabel of sourceCard.labels) {
+            const targetLabel = labelColorMap.get(sourceLabel.color);
+            if (targetLabel) {
+              cardLabelsToInsert.push({
+                card_id: savedCard.id,
+                label_id: targetLabel.id,
+              });
+            } else {
+              // Tạo label mới nếu chưa tồn tại
+              const newLabel = await queryRunner.manager.save(Label, {
+                board_id: dto.targetBoardId,
+                name: sourceLabel.name,
+                color: sourceLabel.color,
+              });
+              cardLabelsToInsert.push({
+                card_id: savedCard.id,
+                label_id: newLabel.id,
+              });
+              labelColorMap.set(newLabel.color, newLabel);
+            }
+          }
+
+          if (cardLabelsToInsert.length > 0) {
+            await queryRunner.manager
+              .createQueryBuilder()
+              .insert()
+              .into('card_labels')
+              .values(cardLabelsToInsert)
+              .orIgnore()
+              .execute();
+          }
+        }
+
+        // Copy checklists
+        if (sourceCard.checklists && sourceCard.checklists.length > 0) {
+          for (const sourceChecklist of sourceCard.checklists) {
+            const newChecklist = queryRunner.manager.create(Checklist, {
+              card_id: savedCard.id,
+              name: sourceChecklist.name,
+              position: sourceChecklist.position,
+            });
+
+            const savedChecklist = await queryRunner.manager.save(Checklist, newChecklist);
+
+            // Copy checklist items
+            if (sourceChecklist.items && sourceChecklist.items.length > 0) {
+              const itemsToInsert = sourceChecklist.items.map((item) => ({
+                checklist_id: savedChecklist.id,
+                content: item.content,
+                position: item.position,
+                is_checked: item.is_checked,
+              }));
+
+              await queryRunner.manager
+                .createQueryBuilder()
+                .insert()
+                .into('checklist_items')
+                .values(itemsToInsert)
+                .execute();
+            }
+          }
+        }
+
+        copiedCards.push(savedCard);
+      }
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error('Error copying list:', error);
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
 
     return {
       copiedList: savedList,

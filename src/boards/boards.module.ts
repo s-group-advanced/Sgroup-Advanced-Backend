@@ -22,6 +22,8 @@ import { BoardTemplatesModule } from 'src/board-templates/board-templates.module
 import { BoardTemplate } from 'src/board-templates/entities/board-templates.entity';
 import { ListTemplate } from 'src/board-templates/entities/list-templates.entity';
 import { CardTemplate } from 'src/board-templates/entities/card-templates.entity';
+import { Checklist } from 'src/cards/entities/checklist.entity';
+import { ChecklistItem } from 'src/cards/entities/checklist-item.entity';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { CardTemplate } from 'src/board-templates/entities/card-templates.entity
       ListTemplate,
       CardTemplate,
       BoardTemplatesModule,
+      Checklist,
+      ChecklistItem,
     ]),
     JwtModule.register({}),
     ConfigModule,

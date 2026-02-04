@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString } from 'class-validator';
+import { IsUUID, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class MoveListDto {
@@ -15,6 +15,6 @@ export class MoveListDto {
     required: false,
   })
   @IsOptional()
-  @IsString()
+  // @IsString()
   position?: number;
 }
