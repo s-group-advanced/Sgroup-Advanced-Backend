@@ -105,7 +105,9 @@ export class WorkspacesController {
 
   @ApiOperation({ summary: 'Update workspace' })
   @ApiOkResponse({ type: Workspace })
-  @Roles(Role.ADMIN) // Only ADMIN or SUPERADMIN can update
+  // @Roles(Role.ADMIN) // Only ADMIN or SUPERADMIN can update
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @WorkspaceRoles('owner')
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateWorkspaceDto): Promise<Workspace> {
     return this.service.update(id, dto);
