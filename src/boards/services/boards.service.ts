@@ -1145,6 +1145,7 @@ export class BoardsService {
         // b. Map Cards
         if (templateList.cards && templateList.cards.length > 0) {
           const mappedCards = templateList.cards.map((templateCard) => ({
+            board_id: savedBoard.id,
             list_id: savedList.id,
             title: templateCard.title,
             description: templateCard.description,
