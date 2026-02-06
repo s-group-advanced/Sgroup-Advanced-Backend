@@ -426,4 +426,168 @@ export class WorkspacesService {
     );
     return memberRepo.save(foundMember);
   }
+
+  // Generate permantent invite link
+  async generateInviteLink(workspaceId: string): Promise<{ inviteUrl: string; token: string }> {
+    const workspace = await this.repo.findOne({ where: { id: workspaceId } });
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found');
+    }
+
+    // Generate a unique token
+    const token = crypto.randomBytes(32).toString('hex');
+
+    // Save token in Redis (permantent, no expiry)
+    const key = `workspace_invite_link:${token}`;
+    await this.redis.set(key, workspaceId);
+
+    const baseUrl = process.env.APP_URL || 'http://localhost:5000';
+    const inviteUrl = `${baseUrl}/api/workspaces/invite/link/${token}`;
+
+    return { inviteUrl, token };
+  }
+
+  // Join workspace via invite link
+  async joinViaInviteLink(
+    token: string,
+    userId: string,
+  ): Promise<{ success: true; message: string; workspace: any }> {
+    // Get workspace id from redis
+    const key = `workspace_invite_link:${token}`;
+    const workspaceId = await this.redis.get(key);
+
+    if (!workspaceId) {
+      throw new BadRequestException('Invalid or expired invite link');
+    }
+
+    const workspace = await this.repo.findOne({
+      where: { id: workspaceId },
+      relations: ['members', 'members.user'],
+    });
+
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found');
+    }
+
+    const memberRepo = this.repo.manager.getRepository(WorkspaceMember);
+    const userRepo = this.repo.manager.getRepository(User);
+
+    // ensure user exists
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // check if already a member
+    const existingMember = await memberRepo.findOne({
+      where: {
+        workspace_id: workspaceId,
+        user_id: userId,
+        status: 'accepted',
+      },
+    });
+
+    if (existingMember) {
+      return {
+        success: true,
+        message: 'You are already a member of this workspace',
+        workspace: {
+          id: workspace.id,
+          name: workspace.name,
+          description: workspace.description,
+        },
+      };
+    }
+
+    // Add user as member
+    const newMember = new WorkspaceMember();
+    newMember.workspace_id = workspaceId;
+    newMember.user_id = userId;
+    newMember.role = 'member';
+    newMember.status = 'accepted';
+
+    await memberRepo.save(newMember);
+
+    // Find owner for welcome email
+    const ownerMember = await memberRepo.findOne({
+      where: { workspace_id: workspaceId, role: 'owner' },
+      relations: ['user'],
+    });
+
+    // Send welcome email
+    try {
+      this.mailService.sendWelcomeToWorkspace(
+        user.email,
+        user.name,
+        workspace.name,
+        newMember.role,
+        ownerMember?.user?.name || 'Team',
+        workspace.id,
+      );
+    } catch (err) {
+      console.error('Failed to send welcome email:', err);
+    }
+
+    return {
+      success: true,
+      message: `Successfully joined workspace ${workspace.name}`,
+      workspace: {
+        id: workspace.id,
+        name: workspace.name,
+        description: workspace.description,
+      },
+    };
+  }
+
+  // Revoke invite link
+  async revokeInviteLink(
+    token: string,
+    workspaceId: string,
+  ): Promise<{ success: true; message: string }> {
+    const key = `workspace_invite_link:${token}`;
+    const storedWorkspaceId = await this.redis.get(key);
+
+    if (!storedWorkspaceId || storedWorkspaceId !== workspaceId) {
+      throw new BadRequestException('Invalid invite link token for the specified workspace');
+    }
+
+    await this.redis.del(key);
+
+    return { success: true, message: 'Invite link revoked successfully' };
+  }
+
+  // Get current invitation link
+  async getInvitationLink(
+    workspaceId: string,
+  ): Promise<{ exists: boolean; inviteUrl?: string; token?: string; createdAt?: Date }> {
+    const workspace = await this.repo.findOne({ where: { id: workspaceId } });
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found');
+    }
+
+    const pattern = 'workspace_invite_link:*';
+    const keys = await this.redis.keys(pattern);
+
+    for (const key of keys) {
+      const storedWorkspaceId = await this.redis.get(key);
+
+      if (storedWorkspaceId === workspaceId) {
+        const token = key.replace('workspace_invite_link:', '');
+
+        const ttl = await this.redis.ttl(key);
+        const baseUrl = process.env.APP_URL || 'http://localhost:5000';
+        const inviteUrl = `${baseUrl}/api/workspaces/invite/link/${token}`;
+
+        return {
+          exists: true,
+          inviteUrl,
+          token,
+          createdAt:
+            ttl > 0 ? new Date(Date.now() - (3 * 24 * 60 * 60 * 1000 - ttl * 1000)) : undefined,
+        };
+      }
+    }
+
+    return { exists: false };
+  }
 }

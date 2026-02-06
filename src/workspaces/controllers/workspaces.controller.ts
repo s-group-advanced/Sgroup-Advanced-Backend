@@ -10,8 +10,10 @@ import {
   UseGuards,
   Query,
   Res,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { WorkspacesService } from '../services/workspaces.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from '../dto';
 import { Workspace } from '../entities/workspace.entity';
@@ -24,6 +26,7 @@ import { WorkspaceRoleGuard } from 'src/common/guards/workspace-role.guard';
 import { Public } from 'src/common/decorators/public.decorator';
 import { WorkspaceMember } from '../entities/workspace-member.entity';
 import { Response } from 'express';
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 
 @ApiTags('Workspaces')
 @Controller('api/workspaces')
@@ -166,5 +169,110 @@ export class WorkspacesController {
     @Body() body: { memberId: string; permissions: string[] },
   ): Promise<WorkspaceMember> {
     return this.service.assignPermissionsToMember(workspaceId, body.memberId, body.permissions);
+  }
+
+  // generate invitation link
+  @ApiOperation({ summary: 'Generate permanent invitation link foe workspace' })
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @WorkspaceRoles('owner')
+  @Post(':workspaceId/generate-invitation-link')
+  async generateInvitationLink(
+    @Param('workspaceId') workspaceId: string,
+  ): Promise<{ inviteUrl: string; token: string }> {
+    return this.service.generateInviteLink(workspaceId);
+  }
+
+  // join workspace via invitation link
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @ApiOperation({ summary: 'Join workspace via invitation link' })
+  @Get('invite/link/:token')
+  async joinViaInvitationLink(
+    @Param('token') token: string,
+    @Req() req: any,
+    @Res() res: any,
+  ): Promise<void> {
+    const userId = req.user?.sub;
+
+    if (!userId) {
+      // Chưa đăng nhập -> redirect
+      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+      const backendUrl = process.env.APP_URL || 'http://localhost:5000';
+      const callbackUrl = `${backendUrl}/api/workspaces/invite/link/${token}`;
+      const redirectUrl = `${frontendUrl}/?callback=${encodeURIComponent(callbackUrl)}`;
+      res.redirect(redirectUrl);
+      return;
+    }
+    try {
+      const result = await this.service.joinViaInviteLink(token, userId);
+      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+
+      res.redirect(`${frontendUrl}/workspaces/${result.workspace.id}?joined=true`);
+    } catch (error: any) {
+      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+
+      let errorMessage = 'Failed to join workspace';
+      let errorType = 'general';
+
+      if (error instanceof BadRequestException) {
+        if (error.message.includes('Invalid or expired')) {
+          errorMessage =
+            'This invitation link is no longer valid. Please contact the workspace owner for a new invite.';
+          errorType = 'expired';
+        } else if (error.message.includes('already a member')) {
+          errorMessage = 'You are already a member of this workspace';
+          errorType = 'already_member';
+        } else {
+          errorMessage = error.message;
+        }
+      } else if (error instanceof NotFoundException) {
+        errorMessage = 'Workspace not found. It may have been deleted.';
+        errorType = 'not_found';
+      } else {
+        errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      }
+
+      const redirectUrl = `${frontendUrl}/invite-error?type=${errorType}&message=${encodeURIComponent(errorMessage)}`;
+      console.error('Join failed:', errorMessage);
+      res.redirect(redirectUrl);
+    }
+  }
+
+  // Revoke invitation link
+  @ApiOperation({ summary: 'Revoke invitation link for workspace' })
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @WorkspaceRoles('owner')
+  @Delete(':workspaceId/invite-link/:token')
+  async revokeInvitationLink(
+    @Param('workspaceId') workspaceId: string,
+    @Param('token') token: string,
+  ): Promise<{ success: true; message: string }> {
+    return this.service.revokeInviteLink(token, workspaceId);
+  }
+
+  // Get current invitation link for workspace
+  @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
+  @WorkspaceRoles('owner')
+  @ApiResponse({
+    status: 200,
+    description: 'Returns current invitation link if exists',
+    schema: {
+      example: {
+        exists: true,
+        inviteUrl: 'http://localhost:5000/api/workspaces/invite/link/abc123...',
+        token: 'abc123...',
+        createdAt: '2024-02-06T10:00:00Z',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'No invitation link found',
+  })
+  @Get(':workspaceId/invitation-link')
+  async getInvitationLink(
+    @Param('workspaceId') workspaceId: string,
+  ): Promise<{ exists: boolean; inviteUrl?: string; token?: string; createdAt?: Date }> {
+    return await this.service.getInvitationLink(workspaceId);
   }
 }
