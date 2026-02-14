@@ -11,6 +11,9 @@ import {
   HttpCode,
   HttpStatus,
   ValidationPipe,
+  Response,
+  NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Query } from '@nestjs/common';
 import {
@@ -48,6 +51,8 @@ import { BoardPermissionGuard } from 'src/common/guards/board-permission.guard';
 import { BoardRole } from 'src/common/enum/role/board-role.enum';
 import { BoardRoles } from 'src/common/decorators/board-roles.decorator';
 import { CreateFromTemplateDto } from '../dto/create-from-template.dto';
+import { Public } from 'src/common/decorators/public.decorator';
+import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard';
 
 @ApiTags('Boards')
 @ApiBearerAuth()
@@ -485,12 +490,69 @@ export class BoardsController {
   }
 
   // ============ Join Board via Invite Link ============
+  @Get(':id/invite-link')
+  @UseGuards(BoardPermissionGuard)
+  @BoardRoles(BoardRole.MEMBER, BoardRole.OWNER)
+  @ApiOperation({ summary: 'Get permanent board invite link for board' })
+  @ApiParam({ name: 'id', description: 'Board ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Board invite link',
+    schema: {
+      example: {
+        inviteUrl: 'http://localhost:5000/boards/invite/abc123xyz...',
+        token: 'abc123xyz...',
+      },
+    },
+  })
+  async getBoardInviteLink(@Param('id') id: string, @Request() req: any) {
+    return this.boardsService.getBoardInviteLink(id, req.user.sub);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('invite/:token')
   @ApiOperation({ summary: 'Join board via permanent invite link' })
   @ApiParam({ name: 'token', description: 'Permanent board invite token' })
   @ApiResponse({ status: 200, description: 'Successfully joined board via permanent link' })
-  async joinBoardViaLink(@Param('token') token: string, @Request() req: any) {
-    return this.boardsService.joinBoardByInviteLink(token, req.user.sub);
+  async joinBoardViaLink(@Param('token') token: string, @Request() req: any, @Response() res: any) {
+    const userId = req.user?.sub;
+
+    if (!userId) {
+      // user not logged in, redirect to login page with return URL
+      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+      const backendUrl = process.env.APP_URL || 'http://localhost:5000';
+      const callbackUrl = `${backendUrl}/boards/invite/${token}`;
+      const redirectUrl = `${frontendUrl}/?callback=${encodeURIComponent(callbackUrl)}`;
+      res.redirect(redirectUrl);
+      return;
+    }
+
+    try {
+      const result = await this.boardsService.joinBoardByInviteLink(token, userId);
+      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+
+      res.redirect(`${frontendUrl}/board/${result.id}?joined=true`);
+    } catch (error) {
+      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+
+      let errorMessage = 'Failed to join board';
+      let errorType = 'general';
+
+      if (error instanceof NotFoundException) {
+        errorMessage = 'Board not found or invite link is invalid';
+        errorType = 'not_found';
+      } else if (error instanceof ForbiddenException) {
+        errorMessage = error.message;
+        errorType = 'forbidden';
+      } else {
+        errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      }
+
+      res.redirect(
+        `${frontendUrl}/board-invite-error?type=${errorType}&message=${encodeURIComponent(errorMessage)}`,
+      );
+    }
   }
 
   // ============ Accept Board Invitation ============
