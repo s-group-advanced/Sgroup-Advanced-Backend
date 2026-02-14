@@ -104,25 +104,22 @@ export class AuthController {
       (req as any).user,
     );
 
-    // save tokens in cookies
     const isProd = process.env.NODE_ENV === 'production';
 
     res.cookie('access_token', access_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
-      maxAge: 15 * 60 * 1000, // 15 minutes
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000,
     });
     res.cookie('refresh_token', refresh_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // Redirect to frontend attach tokens
     const frontendUrl = this.configService.get<string>('FE_URL');
-
     return res.redirect(`${frontendUrl}/oauth-callback?token=${access_token}`);
   }
 

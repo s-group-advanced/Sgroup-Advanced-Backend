@@ -161,6 +161,37 @@ export class BoardsService {
     return board;
   }
 
+  // Get board invite link
+  async getBoardInviteLink(
+    boardId: string,
+    userId: string,
+  ): Promise<{ inviteUrl: string; token: string }> {
+    const board = await this.boardRepository.findOne({
+      where: { id: boardId },
+      select: ['id', 'invite_link_token', 'name'],
+    });
+
+    if (!board) {
+      throw new NotFoundException('Board not found');
+    }
+
+    // Check if user is member of the board
+    const isMember = await this.boardMemberRepository.findOne({
+      where: { board_id: boardId, user_id: userId },
+    });
+    if (!isMember) {
+      throw new ForbiddenException('You are not a member of this board');
+    }
+
+    const baseUrl = process.env.APP_URL || 'http://localhost:5000';
+    const inviteUrl = `${baseUrl}/boards/invite/${board.invite_link_token}`;
+
+    return {
+      inviteUrl,
+      token: board.invite_link_token || '',
+    };
+  }
+
   async update(id: string, updateBoardDto: UpdateBoardDto, userId: string): Promise<Board> {
     await this.checkBoardAccess(id, userId, BoardRole.OWNER);
     await this.boardRepository.update(id, updateBoardDto);
@@ -1035,41 +1066,61 @@ export class BoardsService {
     return board;
   }
 
-  async joinBoardByInviteLink(token: string, userId: string): Promise<Board> {
-    // tìm board theo token đã lưu trong db
+  async joinBoardByInviteLink(token: string, userId: string) {
+    // Find board by invite token
     const board = await this.boardRepository.findOne({
       where: { invite_link_token: token },
+      relations: ['workspace'],
     });
 
     if (!board) {
-      throw new NotFoundException('Invalid or expired invitation');
+      throw new NotFoundException('Invalid invite link');
     }
 
-    if (board.workspace_id) {
-      const workspaceMember = await this.workspaceMemberRepository.findOne({
-        where: { workspace_id: board.workspace_id, user_id: userId },
-      });
-
-      if (!workspaceMember) {
-        throw new ForbiddenException('You must be a member of the workspace to join this board');
-      }
-    }
-
+    // Check if user already a member
     const existingMember = await this.boardMemberRepository.findOne({
       where: { board_id: board.id, user_id: userId },
     });
 
     if (existingMember) {
-      throw new ForbiddenException('You are already a member of this board');
+      return {
+        id: board.id,
+        name: board.name,
+        description: board.description,
+        message: 'You are already a member of this board',
+      };
     }
 
-    await this.boardMemberRepository.save({
+    // If board belongs to workspace, check workspace membership
+    if (board.workspace_id) {
+      const workspaceMember = await this.dataSource.getRepository(WorkspaceMember).findOne({
+        where: {
+          workspace_id: board.workspace_id,
+          user_id: userId,
+          status: 'accepted',
+        },
+      });
+
+      if (!workspaceMember) {
+        throw new ForbiddenException('You must be a workspace member to join this board');
+      }
+    }
+
+    // Add user as board member
+    const newMember = this.boardMemberRepository.create({
       board_id: board.id,
       user_id: userId,
       role: BoardRole.MEMBER,
     });
 
-    return board;
+    await this.boardMemberRepository.save(newMember);
+
+    return {
+      id: board.id,
+      name: board.name,
+      description: board.description,
+      message: 'Successfully joined board',
+    };
   }
 
   private generateToken(): string {
