@@ -49,6 +49,7 @@ import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
 // SSE
 import { Observable } from 'rxjs';
 import { MessageEvent } from '@nestjs/common';
+import { CreateCardFromTemplateDto } from '../dto/create-card-from-template.dto';
 
 @ApiTags('Cards')
 @ApiBearerAuth()
@@ -357,6 +358,51 @@ export class CardsController {
     @Request() req: any,
   ) {
     return this.cardsService.moveCard(id, dto, req.user.sub);
+  }
+
+  // ============ Templates ============
+  // Toggle template status
+  @Patch(':id/toggle-template')
+  @ApiOperation({ summary: 'Toggle card template status' })
+  @ApiParam({ name: 'id', description: 'Card ID' })
+  @ApiResponse({ status: 200, description: 'Card template status toggled' })
+  async toggleTemplate(@Param('id') id: string) {
+    return this.cardsService.toggleTemplate(id);
+  }
+
+  // Get all template cards in a board
+  @Get('templates/board/:boardId')
+  @ApiOperation({ summary: 'Get all template cards in a board' })
+  @ApiParam({ name: 'boardId', description: 'Board ID' })
+  @ApiResponse({ status: 200, description: 'List of template cards' })
+  async getCardTemplates(@Param('boardId') boardId: string) {
+    return this.cardsService.getCardTemplates(boardId);
+  }
+
+  // Create a new card from a template
+  @Post(':id/use-template')
+  @ApiOperation({ summary: 'Create card from template with selective options' })
+  @ApiParam({ name: 'id', description: 'Template card ID' })
+  @ApiBody({ type: CreateCardFromTemplateDto })
+  @ApiResponse({ status: 201, description: 'Card created from template' })
+  async createFromTemplate(
+    @Param('id') templateCardId: string,
+    @Body() dto: CreateCardFromTemplateDto,
+    @Request() req: any,
+  ) {
+    return this.cardsService.createCardFromTemplate(templateCardId, dto.list_id, req.user.sub, dto);
+  }
+
+  // Create a new template card directly
+  @Post('templates')
+  @ApiOperation({ summary: 'Create a new template card directly' })
+  @ApiBody({ type: CreateCardDto })
+  @ApiResponse({ status: 201, description: 'Template card created successfully' })
+  async createTemplate(
+    @Body(new ValidationPipe({ transform: true, whitelist: true })) dto: CreateCardDto,
+    @Request() req: any,
+  ) {
+    return this.cardsService.create({ ...dto, is_template: true }, req.user.sub);
   }
 
   //============= Attachments ============

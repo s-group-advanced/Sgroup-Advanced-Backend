@@ -32,6 +32,7 @@ import { UpdateChecklistDto } from '../dto/update-checklist.dto';
 import { CreateChecklistItemDto } from '../dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
 import { Observable, Subject } from 'rxjs';
+import { CreateCardFromTemplateDto } from '../dto/create-card-from-template.dto';
 
 @Injectable()
 export class CardsService {
@@ -701,6 +702,146 @@ export class CardsService {
     }
 
     return card;
+  }
+
+  // Card template
+  // toggle template
+  async toggleTemplate(cardId: string): Promise<Card> {
+    const card = await this.cardRepository.findOne({ where: { id: cardId } });
+    if (!card) {
+      throw new NotFoundException(`Card with ID ${cardId} not found`);
+    }
+
+    card.is_template = !card.is_template;
+    return this.cardRepository.save(card);
+  }
+
+  // get all templates card in board
+  async getCardTemplates(boardId: string): Promise<Card[]> {
+    return this.cardRepository.find({
+      where: { board_id: boardId, is_template: true, archived: false },
+      relations: ['labels', 'checklists', 'checklists.items', 'attachments'],
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  // create card from template
+  async createCardFromTemplate(
+    templateCardId: string,
+    listId: string,
+    userId: string,
+    options: CreateCardFromTemplateDto,
+  ): Promise<Card> {
+    const template = await this.cardRepository.findOne({
+      where: { id: templateCardId, is_template: true },
+      relations: ['checklists', 'checklists.items', 'labels', 'cardMembers'],
+    });
+
+    if (!template) throw new NotFoundException(`Template card with ID ${templateCardId} not found`);
+
+    // Validate list exists
+    const list = await this.listRepository.findOne({ where: { id: listId } });
+    if (!list) throw new NotFoundException(`List with ID ${listId} not found`);
+
+    // Validate template belongs to same board as target list
+    if (template.board_id !== list.board_id) {
+      throw new BadRequestException(
+        'Template card does not belong to the same board as the target list',
+      );
+    }
+
+    // Get position
+    const lastCard = await this.cardRepository.findOne({
+      where: { list_id: listId },
+      order: { position: 'DESC' },
+    });
+
+    // Clone card
+    const newCard = this.cardRepository.create({
+      list_id: listId,
+      board_id: template.board_id,
+      title: template.title,
+      description: template.description,
+      priority: template.priority,
+      cover_color: template.cover_color,
+      position: lastCard ? lastCard.position + 1024 : 1024,
+      created_by: userId,
+      is_template: false,
+    });
+
+    const savedCard = await this.cardRepository.save(newCard);
+
+    // Clone checklists
+    if (options?.include_checklists && template.checklists?.length) {
+      for (const cl of template.checklists) {
+        const newChecklist = this.checklistRepository.create({
+          card_id: savedCard.id,
+          name: cl.name,
+        });
+        const savedChecklist = await this.checklistRepository.save(newChecklist);
+
+        if (cl.items?.length) {
+          const items = cl.items.map((item) =>
+            this.checklistItemRepository.create({
+              checklist_id: savedChecklist.id,
+              content: item.content,
+              is_checked: false,
+            }),
+          );
+          await this.checklistItemRepository.save(items);
+        }
+      }
+    }
+
+    // Clone labels
+    if (options?.include_labels && template.labels?.length) {
+      const cardLabels = template.labels.map((label) =>
+        this.cardLabelRepository.create({
+          card_id: savedCard.id,
+          label_id: label.id,
+        }),
+      );
+      await this.cardLabelRepository.save(cardLabels);
+    }
+
+    // Clone members
+    if (options?.include_members && template.cardMembers?.length) {
+      const boardMembers = await this.boardMemberRepository.find({
+        where: { board_id: template.board_id },
+        select: ['user_id'],
+      });
+      const boardMemberIds = new Set(boardMembers.map((bm) => bm.user_id));
+
+      const validCardMembers = template.cardMembers
+        .filter((cm) => boardMemberIds.has(cm.user_id))
+        .map((cm) =>
+          this.cardMemberRepository.create({
+            card_id: savedCard.id,
+            user_id: cm.user_id,
+            assigned_at: new Date(),
+          }),
+        );
+
+      if (validCardMembers.length) {
+        await this.cardMemberRepository.save(validCardMembers);
+      }
+    }
+
+    const result = await this.cardRepository.findOne({
+      where: { id: savedCard.id },
+      relations: [
+        'labels',
+        'checklists',
+        'checklists.items',
+        'attachments',
+        'cardMembers',
+        'cardMembers.user',
+      ],
+    });
+
+    if (!result) throw new NotFoundException('Card not found after creation');
+
+    return result;
   }
 
   //==========Attchment============

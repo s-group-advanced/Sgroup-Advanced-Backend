@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsIn, IsDateString, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsIn, IsDateString, MaxLength, IsBoolean } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateCardDto {
@@ -30,4 +30,9 @@ export class CreateCardDto {
   @IsDateString()
   @IsOptional()
   due_at?: string;
+
+  @ApiProperty({ description: 'Mark card as template', required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  is_template?: boolean;
 }

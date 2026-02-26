@@ -156,6 +156,11 @@ export class Card {
   @Column({ type: 'boolean', default: false })
   is_completed?: boolean;
 
+  @ApiProperty({ description: 'Mark this card as a template for reuse within the board' })
+  @Index('idx_cards_is_template')
+  @Column({ type: 'boolean', default: false })
+  is_template!: boolean;
+
   status?: CardStatus;
 
   @AfterLoad()
