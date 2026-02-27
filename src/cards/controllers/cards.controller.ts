@@ -50,6 +50,7 @@ import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
 import { Observable } from 'rxjs';
 import { MessageEvent } from '@nestjs/common';
 import { CreateCardFromTemplateDto } from '../dto/create-card-from-template.dto';
+import { CopyCardDto } from '../dto/copy-card.dto';
 
 @ApiTags('Cards')
 @ApiBearerAuth()
@@ -358,6 +359,20 @@ export class CardsController {
     @Request() req: any,
   ) {
     return this.cardsService.moveCard(id, dto, req.user.sub);
+  }
+
+  // ============ Copy Card ============
+  @Post(':id/copy')
+  @ApiOperation({ summary: 'Copy card to another list (same or different board)' })
+  @ApiParam({ name: 'id', description: 'Source card ID' })
+  @ApiBody({ type: CopyCardDto })
+  @ApiResponse({ status: 201, description: 'Card copied successfully' })
+  async copyCard(
+    @Param('id') id: string,
+    @Body(new ValidationPipe({ transform: true, whitelist: true })) dto: CopyCardDto,
+    @Request() req: any,
+  ) {
+    return this.cardsService.copyCard(id, dto, req.user.sub);
   }
 
   // ============ Templates ============
