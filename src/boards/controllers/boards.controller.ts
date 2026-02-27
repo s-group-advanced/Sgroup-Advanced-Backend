@@ -113,6 +113,14 @@ export class BoardsController {
     return this.boardsService.findAll(req.user.sub, status, workspaceId);
   }
 
+  // get boards that user is real member (board must active, not closed)
+  @Get('my-boards')
+  @ApiOperation({ summary: 'Get all boards that current user is a member of' })
+  @ApiResponse({ status: 200, description: 'List of boards user is member of' })
+  async getMyBoards(@Request() req: any) {
+    return this.boardsService.findBoardsByMembership(req.user.sub);
+  }
+
   @Get(':id')
   @UseGuards(BoardPermissionGuard)
   @ApiOperation({ summary: 'Get board by ID' })

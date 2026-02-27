@@ -33,6 +33,7 @@ import { CreateChecklistItemDto } from '../dto/create-checklist-item.dto';
 import { UpdateChecklistItemDto } from '../dto/update-checklist-item.dto';
 import { Observable, Subject } from 'rxjs';
 import { CreateCardFromTemplateDto } from '../dto/create-card-from-template.dto';
+import { CopyCardDto } from '../dto/copy-card.dto';
 
 @Injectable()
 export class CardsService {
@@ -702,6 +703,156 @@ export class CardsService {
     }
 
     return card;
+  }
+
+  // Copy Card
+  async copyCard(cardId: string, dto: CopyCardDto, userId: string): Promise<Card> {
+    // Get source card
+    const sourceCard = await this.cardRepository.findOne({
+      where: { id: cardId },
+      relations: ['checklists', 'checklists.items', 'labels', 'cardMembers'],
+    });
+    if (!sourceCard) throw new NotFoundException(`Card with ID ${cardId} not found`);
+
+    // Validate target list
+    const targetList = await this.listRepository.findOne({ where: { id: dto.targetListId } });
+    if (!targetList)
+      throw new NotFoundException(`Target list with ID ${dto.targetListId} not found`);
+
+    // If copying to different board, check if user is member of target board
+    if (sourceCard.board_id !== targetList.board_id) {
+      const isMember = await this.boardMemberRepository.findOne({
+        where: { board_id: targetList.board_id, user_id: userId },
+      });
+      if (!isMember)
+        throw new ForbiddenException(
+          'You are not a member of ther target board, cannot copy card to that board',
+        );
+    }
+    // Calulate new position in target list
+    const cardsInTarget = await this.cardRepository.find({
+      where: { list_id: dto.targetListId },
+      order: { position: 'ASC' },
+      select: ['id', 'position'],
+    });
+
+    let newPosition: number;
+
+    if (cardsInTarget.length === 0) {
+      newPosition = 1024;
+    } else if (dto.newIndex === undefined || dto.newIndex === null) {
+      newPosition = cardsInTarget[cardsInTarget.length - 1].position + 1024;
+    } else if (dto.newIndex <= 0) {
+      const firstPos = cardsInTarget[0].position;
+      newPosition = firstPos - 1024;
+    } else if (dto.newIndex >= cardsInTarget.length) {
+      newPosition = cardsInTarget[cardsInTarget.length - 1].position + 1024;
+    } else {
+      // Chèn vào giữa: nằm giữa card index-1 và index
+      const prev = cardsInTarget[dto.newIndex - 1].position;
+      const next = cardsInTarget[dto.newIndex].position;
+      newPosition = (prev + next) / 2;
+    }
+
+    // Clone card
+    const newCard = this.cardRepository.create({
+      list_id: dto.targetListId,
+      board_id: targetList.board_id,
+      title: dto.title || sourceCard.title,
+      description: sourceCard.description,
+      priority: sourceCard.priority,
+      cover_color: sourceCard.cover_color,
+      start_date: sourceCard.start_date,
+      end_date: sourceCard.end_date,
+      position: newPosition,
+      created_by: userId,
+      is_template: false,
+      is_completed: false,
+    });
+
+    const savedCard = await this.cardRepository.save(newCard);
+
+    // Copy checklists (Optional)
+    if (dto.includeChecklists && sourceCard.checklists?.length) {
+      for (const cl of sourceCard.checklists) {
+        const newChecklist = this.checklistRepository.create({
+          card_id: savedCard.id,
+          name: cl.name,
+        });
+        const savedChecklist = await this.checklistRepository.save(newChecklist);
+
+        if (cl.items?.length) {
+          const items = cl.items.map((item) =>
+            this.checklistItemRepository.create({
+              checklist_id: savedChecklist.id,
+              content: item.content,
+              is_checked: false,
+            }),
+          );
+          await this.checklistItemRepository.save(items);
+        }
+      }
+    }
+
+    // Copy labels (Optional)
+    if (dto.includeLabels && sourceCard.labels?.length) {
+      if (sourceCard.board_id === targetList.board_id) {
+        const cardLabels = sourceCard.labels.map((label) =>
+          this.cardLabelRepository.create({
+            card_id: savedCard.id,
+            label_id: label.id,
+          }),
+        );
+        await this.cardLabelRepository.save(cardLabels);
+      }
+      // If copying to different board, we cannot copy labels because they belong to different board
+    }
+
+    // Copy members (Optional)
+    if (dto.includeMembers && sourceCard.cardMembers?.length) {
+      const boardMembers = await this.boardMemberRepository.find({
+        where: { board_id: targetList.board_id },
+        select: ['user_id'],
+      });
+      const boardMemberIds = new Set(boardMembers.map((bm) => bm.user_id));
+
+      const validCardMembers = sourceCard.cardMembers
+        .filter((cm) => boardMemberIds.has(cm.user_id))
+        .map((cm) =>
+          this.cardMemberRepository.create({
+            card_id: savedCard.id,
+            user_id: cm.user_id,
+            assigned_at: new Date(),
+          }),
+        );
+
+      if (validCardMembers.length) {
+        await this.cardMemberRepository.save(validCardMembers);
+      }
+    }
+
+    // log activity
+    await this.logActivity(savedCard.id, userId, 'card_copied', {
+      sourceCardId: cardId,
+      targetListId: dto.targetListId,
+      targetBoardId: targetList.board_id,
+    });
+
+    const result = await this.cardRepository.findOne({
+      where: { id: savedCard.id },
+      relations: [
+        'labels',
+        'checklists',
+        'checklists.items',
+        'attachments',
+        'cardMembers',
+        'cardMembers.user',
+      ],
+    });
+
+    if (!result) throw new NotFoundException('Card not found after copying');
+
+    return result;
   }
 
   // Card template

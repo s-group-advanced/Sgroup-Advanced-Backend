@@ -150,6 +150,18 @@ export class BoardsService {
     return query.orderBy('board.createdAt', 'DESC').getMany();
   }
 
+  // get board that user is real member (board must active, not closed)
+  async findBoardsByMembership(userId: string): Promise<Board[]> {
+    return this.boardRepository
+      .createQueryBuilder('board')
+      .innerJoin('board.members', 'bm', 'bm.user_id = :userId', { userId })
+      .innerJoin('board.workspace', 'w')
+      .andWhere('w.archive = false')
+      .andWhere('board.is_closed = false')
+      .orderBy('board.createdAt', 'DESC')
+      .getMany();
+  }
+
   async findOne(id: string, userId: string): Promise<Board> {
     await this.checkBoardAccess(id, userId);
     const board = await this.boardRepository.findOne({
