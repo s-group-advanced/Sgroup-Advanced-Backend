@@ -144,16 +144,16 @@ export class CardsController {
   @ApiOperation({ summary: 'Archive a card' })
   @ApiParam({ name: 'id', description: 'Card ID' })
   @ApiResponse({ status: 200, description: 'Card archived successfully' })
-  async archive(@Param('id') id: string) {
-    return this.cardsService.archiveCard(id, true);
+  async archive(@Param('id') id: string, @Body('archived') archived: boolean) {
+    return this.cardsService.archiveCard(id, archived);
   }
 
   @Delete(':id/archive')
   @ApiOperation({ summary: 'Unarchive a card' })
   @ApiParam({ name: 'id', description: 'Card ID' })
   @ApiResponse({ status: 200, description: 'Card unarchived successfully' })
-  async unarchive(@Param('id') id: string) {
-    return this.cardsService.archiveCard(id, true);
+  async unarchive(@Param('id') id: string, @Body('archived') archived: boolean) {
+    return this.cardsService.archiveCard(id, archived);
   }
 
   // ============ Comments ============
