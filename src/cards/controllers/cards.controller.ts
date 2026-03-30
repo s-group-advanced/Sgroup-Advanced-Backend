@@ -434,6 +434,30 @@ export class CardsController {
     return this.cardsService.addAttachment(id, dto, req.user.sub);
   }
 
+  // get all attachment in a card
+  @Get(':id/attachments')
+  @ApiOperation({ summary: 'Get all attachments for a card' })
+  @ApiParam({ name: 'id', description: 'Card ID' })
+  @ApiResponse({ status: 200, description: 'List of attachments' })
+  async getCardAttachments(@Param('id') id: string) {
+    return this.cardsService.getCardAttachments(id);
+  }
+
+  // Delete an attachment from a card
+  @Delete(':id/attachments/:attachmentId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete an attachment from a card' })
+  @ApiParam({ name: 'id', description: 'Card ID' })
+  @ApiParam({ name: 'attachmentId', description: 'Attachment ID' })
+  @ApiResponse({ status: 204, description: 'Attachment deleted from card' })
+  async deleteAttachment(
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @Request() req: any,
+  ) {
+    await this.cardsService.removeAttachment(id, attachmentId, req.user.sub);
+  }
+
   //chosen cover
   @Patch(':id/cover')
   @ApiOperation({ summary: 'Set card cover (attachment or color)' })
