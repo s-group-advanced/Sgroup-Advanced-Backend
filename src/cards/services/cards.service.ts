@@ -1017,6 +1017,56 @@ export class CardsService {
     await this.cardRepository.increment({ id }, 'attachments_count', 1);
     return saved;
   }
+
+  // Get all attachments of card
+  async getCardAttachments(cardId: string): Promise<Attachment[]> {
+    const card = await this.cardRepository.findOne({
+      where: { id: cardId },
+    });
+    if (!card) {
+      throw new NotFoundException(`Card with ID ${cardId} not found`);
+    }
+
+    return this.attachmentRepository.find({
+      where: { card_id: cardId },
+      order: { created_at: 'DESC' },
+    });
+  }
+
+  // Delete attachment from card
+  async removeAttachment(cardId: string, attachmentId: string, userId: string): Promise<void> {
+    const card = await this.cardRepository.findOne({
+      where: { id: cardId },
+    });
+    if (!card) {
+      throw new NotFoundException(`Card with ID ${cardId} not found`);
+    }
+
+    const attachment = await this.attachmentRepository.findOne({
+      where: { id: attachmentId, card_id: cardId },
+    });
+
+    if (!attachment)
+      throw new NotFoundException(`Attachment with ID ${attachmentId} not found on this card`);
+
+    // clear cover if this attachment is set as cover
+    if (card.cover_attachment_id === attachmentId) {
+      card.cover_attachment_id = undefined;
+      await this.cardRepository.save(card);
+    }
+
+    await this.attachmentRepository.delete({ id: attachmentId, card_id: cardId });
+
+    if ((card.attachments_count ?? 0) > 0) {
+      await this.cardRepository.decrement({ id: cardId }, 'attachments_count', 1);
+    }
+
+    await this.logActivity(cardId, userId, 'attachment_deleted', {
+      attachmentId,
+      file_name: attachment.file_name,
+    });
+  }
+
   async setCover(id: string, dto: import('../dto/set-cover.dto').SetCoverDto) {
     const card = await this.findOne(id);
     if (!card) {
