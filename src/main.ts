@@ -20,18 +20,30 @@ async function bootstrap() {
   );
   app.use(cookieParser());
 
+  const allowedOrigins = [
+    /^http:\/\/localhost:\d+$/,
+    /^http:\/\/127\.0\.0\.1:\d+$/,
+    'http://localhost:5173',
+  ];
+
+  if (process.env.CORS_ORIGIN) {
+    const cleanOrigin = process.env.CORS_ORIGIN.trim().replace(/\/$/, '');
+    allowedOrigins.push(cleanOrigin);
+
+    console.log('✅ CORS allowed origin added:', cleanOrigin);
+  }
+
   app.enableCors({
-    // Allow localhost on any port in dev (e.g., 5173, 5174, 3000, etc.)
-    origin: [
-      /^http:\/\/localhost:\d+$/,
-      /^http:\/\/127\.0\.0\.1:\d+$/,
-      process.env.CORS_ORIGIN ?? '',
-      'http://localhost:5173/react-app',
-      'http://localhost:5173/',
-    ].filter(Boolean) as any,
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'X-Requested-With',
+      'Access-Control-Allow-Origin',
+    ],
     exposedHeaders: ['Content-Type'],
   });
 
