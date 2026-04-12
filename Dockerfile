@@ -5,10 +5,12 @@ WORKDIR /app
 COPY package*.json ./
 
 # Dùng --legacy-peer-deps nếu dự án của bạn có conflict version
-RUN npm install
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 
+RUN npm run build
+
 EXPOSE 5000
 
-CMD ["npm", "run", "start:dev"]
+CMD ["npm", "run", "start:prod"]
