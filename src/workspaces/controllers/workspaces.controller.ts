@@ -33,6 +33,15 @@ import { OptionalJwtAuthGuard } from 'src/common/guards/optional-jwt-auth.guard'
 export class WorkspacesController {
   constructor(private readonly service: WorkspacesService) {}
 
+  private getFrontendUrl(): string {
+    return (process.env.FE_URL || 'http://localhost:5173/react-app').replace(/\/+$/, '');
+  }
+
+  private getWorkspaceApiBaseUrl(): string {
+    const appUrl = (process.env.APP_URL || 'https://luongvanvo.id.vn/api').replace(/\/+$/, '');
+    return appUrl.endsWith('/api') ? appUrl : `${appUrl}/api`;
+  }
+
   // api test role
   @UseGuards(JwtAuthGuard, WorkspaceRoleGuard)
   @Get('test-role/:workspaceId')
@@ -196,20 +205,20 @@ export class WorkspacesController {
 
     if (!userId) {
       // Chưa đăng nhập -> redirect
-      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
-      const backendUrl = process.env.APP_URL || 'http://localhost:5000';
-      const callbackUrl = `${backendUrl}/api/workspaces/invite/link/${token}`;
+      const frontendUrl = this.getFrontendUrl();
+      const apiBaseUrl = this.getWorkspaceApiBaseUrl();
+      const callbackUrl = `${apiBaseUrl}/workspaces/invite/link/${token}`;
       const redirectUrl = `${frontendUrl}/?callback=${encodeURIComponent(callbackUrl)}`;
       res.redirect(redirectUrl);
       return;
     }
     try {
       const result = await this.service.joinViaInviteLink(token, userId);
-      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+      const frontendUrl = this.getFrontendUrl();
 
       res.redirect(`${frontendUrl}/workspaces/${result.workspace.id}?joined=true`);
     } catch (error: any) {
-      const frontendUrl = process.env.FE_URL || 'http://localhost:5173/react-app';
+      const frontendUrl = this.getFrontendUrl();
 
       let errorMessage = 'Failed to join workspace';
       let errorType = 'general';

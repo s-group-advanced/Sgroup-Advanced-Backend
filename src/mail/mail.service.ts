@@ -10,11 +10,25 @@ export class MailService {
     private readonly configService: ConfigService,
   ) {}
 
+  private getFrontendUrl(): string {
+    const frontendUrl = this.configService.get<string>(
+      'FE_URL',
+      'https://luongvanvo.id.vn/react-app',
+    );
+    return frontendUrl.replace(/\/+$/, '');
+  }
+
+  private getWorkspaceApiBaseUrl(): string {
+    const appUrl = this.configService.get<string>('APP_URL', 'https://luongvanvo.id.vn/api');
+    const normalized = appUrl.replace(/\/+$/, '');
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
   async sendVerificationEmail(email: string, name: string, token: string): Promise<void> {
-    const verificationUrl = `${this.configService.get('APP_URL', 'http://localhost:5000')}/auth/verify-email?token=${token}`;
+    const verificationUrl = `${this.configService.get('APP_URL', 'https://luongvanvo.id.vn/api')}/auth/verify-email?token=${token}`;
 
     try {
-      this.mailerService.sendMail({
+      await this.mailerService.sendMail({
         to: email,
         subject: 'Xác thực tài khoản của bạn',
         template: 'verification',
@@ -31,7 +45,7 @@ export class MailService {
 
   async sendWelcomeEmail(email: string, name: string): Promise<void> {
     try {
-      this.mailerService.sendMail({
+      await this.mailerService.sendMail({
         to: email,
         subject: 'Chào mừng đến với Sgroup!',
         template: 'welcome',
@@ -46,10 +60,10 @@ export class MailService {
   }
 
   async sendResetPasswordEmail(email: string, name: string, token: string): Promise<void> {
-    const resetUrl = `${this.configService.get('APP_URL', 'http://localhost:5000')}/auth/reset-password?token=${token}`;
+    const resetUrl = `${this.configService.get('APP_URL', 'https://luongvanvo.id.vn/api')}/auth/reset-password?token=${token}`;
 
     try {
-      this.mailerService.sendMail({
+      await this.mailerService.sendMail({
         to: email,
         subject: 'Reset your Sgroup password',
         template: 'reset-password',
@@ -72,9 +86,9 @@ export class MailService {
     inviterName: string,
     token: string,
   ): Promise<void> {
-    const baseUrl = process.env.BACKEND_URL || 'http://localhost:5000';
-    const acceptUrl = `${baseUrl}/api/workspaces/accept-invitation?token=${token}`;
-    const rejectUrl = `${baseUrl}/api/workspaces/reject-invitation?token=${token}`;
+    const apiBaseUrl = this.getWorkspaceApiBaseUrl();
+    const acceptUrl = `${apiBaseUrl}/workspaces/accept-invitation?token=${token}`;
+    const rejectUrl = `${apiBaseUrl}/workspaces/reject-invitation?token=${token}`;
 
     const html = getWorkspaceInvitationEmailTemplate({
       userName,
@@ -99,10 +113,10 @@ export class MailService {
     invitedBy: string,
     workspaceId: string,
   ): Promise<void> {
-    const workspaceUrl = `${this.configService.get('FE_URL', 'http://localhost:5173/react-app')}/workspaces/${workspaceId}`;
+    const workspaceUrl = `${this.getFrontendUrl()}/workspaces/${workspaceId}`;
 
     try {
-      this.mailerService.sendMail({
+      await this.mailerService.sendMail({
         to: email,
         subject: `Welcome to ${workspaceName}!`,
         template: 'welcome-to-workspace',
@@ -127,7 +141,7 @@ export class MailService {
     invitation_link: string;
   }): Promise<void> {
     try {
-      this.mailerService.sendMail({
+      await this.mailerService.sendMail({
         to: data.invited_email,
         subject: `You've been invited to join ${data.board_name}`,
         template: 'board-invitation',
