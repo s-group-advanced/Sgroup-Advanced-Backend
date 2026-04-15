@@ -207,7 +207,7 @@ export class WorkspacesController {
       // Chưa đăng nhập -> redirect
       const frontendUrl = this.getFrontendUrl();
       const apiBaseUrl = this.getWorkspaceApiBaseUrl();
-      const callbackUrl = `${apiBaseUrl}/workspaces/invite/link/${token}`;
+      const callbackUrl = `${apiBaseUrl}/api/workspaces/invite/link/${token}`;
       const redirectUrl = `${frontendUrl}/?callback=${encodeURIComponent(callbackUrl)}`;
       res.redirect(redirectUrl);
       return;

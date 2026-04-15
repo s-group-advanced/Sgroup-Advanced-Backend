@@ -87,8 +87,8 @@ export class MailService {
     token: string,
   ): Promise<void> {
     const apiBaseUrl = this.getWorkspaceApiBaseUrl();
-    const acceptUrl = `${apiBaseUrl}/workspaces/accept-invitation?token=${token}`;
-    const rejectUrl = `${apiBaseUrl}/workspaces/reject-invitation?token=${token}`;
+    const acceptUrl = `${apiBaseUrl}/api/workspaces/accept-invitation?token=${token}`;
+    const rejectUrl = `${apiBaseUrl}/api/workspaces/reject-invitation?token=${token}`;
 
     const html = getWorkspaceInvitationEmailTemplate({
       userName,
