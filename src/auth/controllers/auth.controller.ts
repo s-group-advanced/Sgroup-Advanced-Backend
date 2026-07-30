@@ -71,14 +71,14 @@ export class AuthController {
     res.cookie('access_token', result.access_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: result.expires_in * 1000,
       path: '/',
     });
     res.cookie('refresh_token', result.refresh_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       // 7 days
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
@@ -109,13 +109,13 @@ export class AuthController {
     res.cookie('access_token', access_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: 15 * 60 * 1000,
     });
     res.cookie('refresh_token', refresh_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -251,7 +251,7 @@ export class AuthController {
     res.cookie('access_token', result.access_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: result.expires_in * 1000,
       path: '/',
     });
@@ -259,7 +259,7 @@ export class AuthController {
     res.cookie('refresh_token', result.refresh_token, {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       // 7 days
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -276,13 +276,13 @@ export class AuthController {
     res.clearCookie('access_token', {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       path: '/',
     });
     res.clearCookie('refresh_token', {
       httpOnly: true,
       secure: isProd,
-      sameSite: isProd ? 'lax' : 'lax',
+      sameSite: isProd ? 'none' : 'lax',
       path: '/',
     });
     return { message: 'Logged out' };
