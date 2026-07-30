@@ -11,11 +11,13 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
     {
       provide: REDIS_CLIENT,
       useFactory: (configService: ConfigService) => {
+        const host = configService.get<string>('REDIS_HOST', '127.0.0.1');
         const client = new Redis({
-          host: configService.get<string>('REDIS_HOST', '127.0.0.1'),
-          port: configService.get<number>('REDIS_PORT', 6379),
+          host,
+          port: Number(configService.get<number>('REDIS_PORT', 6379)),
           password: configService.get<string>('REDIS_PASSWORD'),
           username: configService.get<string>('REDIS_USERNAME'),
+          tls: host.includes('upstash.io') || process.env.REDIS_TLS === 'true' ? {} : undefined,
         });
 
         client.on('connect', () => {
